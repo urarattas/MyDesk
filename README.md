@@ -108,6 +108,12 @@ from the **系统级操控** panel:
   from the [releases page](https://github.com/urarattas/MyDesk/releases); CI builds
   and smoke-tests it on `windows-latest` for every change under `bridge/`.
 
+Releases come from CI: every push to `server` refreshes the rolling
+`bridge-latest` release, and a `bridge-v*` tag produces a versioned one. Both ship
+`MyDeskBridge.exe` plus its SHA-256, so
+`https://github.com/urarattas/MyDesk/releases/latest/download/MyDeskBridge.exe`
+always resolves once the workflow has run.
+
 Both listen on `127.0.0.1:8765` only. See [bridge/README.md](bridge/README.md).
 
 Control is engaged by clicking the video: **Esc releases it, clicking again resumes**.
