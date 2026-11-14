@@ -1,0 +1,8 @@
+.git
+.github
+.devtest
+node_modules
+test
+*.md
+*.png
+*.log

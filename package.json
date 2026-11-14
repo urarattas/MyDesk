@@ -1,0 +1,14 @@
+{
+  "name": "mydesk-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Signaling server and Docker image for MyDesk, the single-file P2P remote desktop",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
