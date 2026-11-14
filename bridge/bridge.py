@@ -51,6 +51,23 @@ SPECIAL = {
 for _i in range(1, 13):
     SPECIAL["F" + str(_i)] = getattr(Key, "f" + str(_i))
 
+# 各平台不一定都有这些键，缺的跳过
+_EXTRA = {
+    "PrintScreen": "print_screen", "ScrollLock": "scroll_lock", "Pause": "pause",
+    "ContextMenu": "menu",
+    "AudioVolumeMute": "media_volume_mute", "AudioVolumeDown": "media_volume_down",
+    "AudioVolumeUp": "media_volume_up", "MediaPlayPause": "media_play_pause",
+    "MediaStop": "media_stop", "MediaTrackNext": "media_next",
+    "MediaTrackPrevious": "media_previous",
+    "BrowserBack": "browser_back", "BrowserForward": "browser_forward",
+    "BrowserRefresh": "browser_refresh", "BrowserHome": "browser_home",
+    "BrowserSearch": "browser_search", "BrowserFavorites": "browser_favorites",
+}
+for _code, _attr in _EXTRA.items():
+    _key = getattr(Key, _attr, None)
+    if _key is not None:
+        SPECIAL[_code] = _key
+
 held_mods = set()
 held_by_code = {}          # code -> 实际按下的键对象，避免大小写变化导致按键卡住
 
@@ -117,6 +134,27 @@ def release_all():
         except Exception: pass
     held_mods.clear()
 
+def apply_events(events):
+    """一次请求里的连续鼠标移动只落最后一次：中间位置没有意义，
+    还能把每帧几十次 SetCursorPos 压成一次。"""
+    pending_move = None
+    for ev in events:
+        try:
+            if ev.get("t") == "m":
+                pending_move = ev
+                continue
+            if pending_move is not None:
+                handle(pending_move)
+                pending_move = None
+            handle(ev)
+        except Exception:
+            pass
+    if pending_move is not None:
+        try:
+            handle(pending_move)
+        except Exception:
+            pass
+
 def handle(ev):
     t = ev.get("t")
     if t == "release":
@@ -137,6 +175,9 @@ def handle(ev):
         kb.type(ev.get("s", ""))
 
 class Handler(BaseHTTPRequestHandler):
+    # keep-alive：否则每个鼠标事件都要新建一次 TCP 连接，几十赫兹下延迟很明显
+    protocol_version = "HTTP/1.1"
+
     def log_message(self, *a):
         pass
 
@@ -146,27 +187,34 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Private-Network", "true")
 
+    def _reply(self, code, body=b"", ctype=None):
+        self.send_response(code)
+        self._cors()
+        if ctype:
+            self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
     def do_OPTIONS(self):
-        self.send_response(204); self._cors(); self.end_headers()
+        self._reply(204)
 
     def do_GET(self):
         body = json.dumps({"ok": True, "screen": [SW, SH]}).encode()
-        self.send_response(200); self._cors()
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers(); self.wfile.write(body)
+        self._reply(200, body, "application/json")
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(n) if n else b"{}"
         try:
-            data = json.loads(self.rfile.read(n) or b"{}")
-            for ev in data.get("events", []):
-                try: handle(ev)
-                except Exception: pass
+            apply_events(json.loads(raw).get("events", []))
         except Exception:
             pass
-        self.send_response(204); self._cors(); self.end_headers()
+        self._reply(204)
 
 if __name__ == "__main__":
     print("MyDesk bridge  ->  http://127.0.0.1:%d   screen %dx%d" % (PORT, SW, SH))
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    httpd.daemon_threads = True
+    httpd.serve_forever()

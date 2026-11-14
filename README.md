@@ -49,6 +49,9 @@ and you get screen sharing plus remote mouse/keyboard in both directions.
 - A browser cannot inject OS-level input. An optional local bridge — `bridge/bridge.py`
   or the packaged `MyDeskBridge.exe` — applies remote input to the real desktop. Both
   are handed out from the **系统级操控** panel and listen on `127.0.0.1:8765` only.
+- Control is captured by clicking the video; **Esc releases mouse and keyboard**, clicking
+  again resumes. While captured the page requests a keyboard lock, so Ctrl+W / Ctrl+T / F11
+  reach the remote instead of the local browser (Chrome/Edge, secure context).
 - Symmetric NAT on both ends cannot be traversed without a relay. Add TURN under
   **高级：自定义 STUN / TURN**, or put both machines on a virtual LAN (e.g. EasyTier —
   the UI ships a small STUN server for that case).
