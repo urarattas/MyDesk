@@ -928,7 +928,7 @@ const S = {
   warnedDc: false,
   stats: { timer: 0, pingTimer: 0, lastIn: 0, lastOut: 0, lastTs: 0, lastInFrames: 0, lastOutFrames: 0, ping: null, pingId: 0, pingSent: new Map() },
   testTimer: 0,
-  input: { held: new Set(), active: false, keyLock: false, raf: 0, pending: null, wheel: 0, wheelTimer: 0 },
+  input: { held: new Set(), active: false, keyLock: false, raf: 0, pending: null, wheel: 0, wheelTimer: 0, downOnStage: false },
   hideCursor: true,
   remoteSharing: null,
   replacingStream: false,
@@ -2667,6 +2667,9 @@ function bindUI() {
   // 舞台交互
   dom.stage.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0 && ev.button !== 2 && ev.button !== 1) return;
+    // 工具栏在画面之上，点它是要操作本页面，不能当成“控制远端”的点击吃掉
+    if (ev.target.closest(".stage-tools")) { S.input.downOnStage = false; return; }
+    S.input.downOnStage = true;
     if (S.phase !== "live") return;
     if (!S.wantControl) {
       if (remoteVisible()) toast("先在左侧开启「我可以控制对方」");
@@ -2691,6 +2694,9 @@ function bindUI() {
   });
 
   const upHandler = (ev) => {
+    // 只有按下是打在画面上，抬起才需要通知远端（否则会给对方发一个孤立的抬键）
+    if (!S.input.downOnStage) return;
+    S.input.downOnStage = false;
     if (!canSendInput()) return;
     const p = normPoint(ev);
     sendInput({ t: "mb", d: 0, b: ev.button, x: p.x, y: p.y });
@@ -2700,6 +2706,7 @@ function bindUI() {
   dom.stage.addEventListener("contextmenu", (e) => e.preventDefault());
 
   dom.stage.addEventListener("wheel", (ev) => {
+    if (ev.target.closest(".stage-tools")) return;
     if (!canSendInput()) return;
     if (!remoteVisible()) return;
     ev.preventDefault();
