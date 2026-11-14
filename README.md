@@ -51,6 +51,42 @@ PORT=9000 node server.js
 
 Node 20+ is required. There is nothing to `npm install`.
 
+## Behind a tunnel or reverse proxy
+
+Cloudflare Tunnel, nginx and friends all work, but two details bite:
+
+**Use `127.0.0.1`, not `localhost`, in the ingress rule.** Docker publishes IPv4
+only, and `localhost` can resolve to `::1` first:
+
+```yaml
+ingress:
+  - hostname: desk.example.com
+    service: http://127.0.0.1:6688
+  - service: http_status:404
+```
+
+**If the tunnel client runs in its own container**, `127.0.0.1` means that
+container, not the NAS. Use the host address instead — the NAS LAN IP, or
+`http://host.docker.internal:6688` with
+`--add-host=host.docker.internal:host-gateway` — or run the tunnel client with
+`--network host`.
+
+Port publishing is independent of this: `-p 6688:8080` publishes the container's
+8080 on the host's 6688, so the ingress rule points at **6688**.
+
+Quick check from the machine that runs the tunnel client:
+
+```bash
+curl -sv http://127.0.0.1:6688/healthz        # {"ok":true,...}
+curl -i -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" \
+  -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+  https://desk.example.com/ws                 # HTTP/1.1 101
+```
+
+If `/healthz` answers but the tunnel returns 502, the origin address is wrong; if
+the tunnel answers but `/ws` fails, the proxy is not forwarding the upgrade.
+
 ## Environment
 
 | Variable | Default | Meaning |
