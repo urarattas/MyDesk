@@ -286,6 +286,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 }
 .tool:hover{background:rgba(255,255,255,.1);color:#fff}
 .tool.off{color:#7c869c}
+.tool:disabled{opacity:.35;cursor:default}
 .tool svg{width:17px;height:17px;display:block}
 .tool .snd-wave{opacity:1;transition:opacity .15s}
 .tool .snd-slash{opacity:0;transition:opacity .15s}
@@ -700,7 +701,7 @@ details .dbody>*:first-child{margin-top:12px}
   <!-- ========== 舞台 ========== -->
   <section class="stage-wrap">
     <div class="stage" id="stage" tabindex="0">
-      <video id="remote" autoplay playsinline></video>
+      <video id="remote" autoplay playsinline muted></video>
 
       <div class="stage-idle" id="stageIdle">
         <div class="orb"></div>
@@ -731,7 +732,7 @@ details .dbody>*:first-child{margin-top:12px}
       <div class="peer-chip hidden" id="peerChip"><i class="dot"></i><span>对方屏幕</span></div>
 
       <div class="stage-tools">
-        <button class="tool muted" id="btnSound" title="声音开关" aria-label="声音开关">
+        <button class="tool muted" id="btnSound" title="对方没有共享音频" aria-label="声音开关" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 9.4h3.2L12 5.8v12.4L7.2 14.6H4z"/>
             <path class="snd-wave" d="M15.4 9.1a4.1 4.1 0 0 1 0 5.8M17.9 7a7.4 7.4 0 0 1 0 10"/>
@@ -1394,6 +1395,8 @@ function closePeer(silent) {
   byId("swAllow").checked = false;
   S.allowControl = false;
   dom.remote.srcObject = null;
+  byId("btnSound").disabled = true;
+  byId("btnSound").title = "对方没有共享音频";
   dom.btnDisconnect.disabled = true;
   byId("liveStats").hidden = true;
   byId("liveMode").textContent = "P2P 直连";
@@ -1750,6 +1753,12 @@ function buildPeer(role, trickle) {
       if (slot === S.remoteSlot) setRemoteVideoTrack(track);
       log("收到对方视频流（槽位 " + slot + " · " + CODEC_SLOTS[slot].toUpperCase() + "）");
     } else {
+      // 音频轨即使没有数据也会存在（muted）。只有真的收到声音才让按钮可用。
+      const snd = byId("btnSound");
+      snd.disabled = track.muted;
+      if (!track.muted) snd.title = "声音开关";
+      track.addEventListener("unmute", () => { snd.disabled = false; snd.title = "声音开关"; });
+      track.addEventListener("mute", () => { snd.disabled = true; snd.title = "对方没有共享音频"; });
       if (!S.remoteStream.getTrackById(track.id)) S.remoteStream.addTrack(track);
       if (ev.streams && ev.streams[0]) {
         for (const t of ev.streams[0].getTracks()) {
