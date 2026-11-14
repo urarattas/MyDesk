@@ -24,6 +24,43 @@ python bridge.py
 Then, in the MyDesk page on the controlled machine, open **系统级操控** and press
 **检测**. The status turns to `已连接` and clicks/keystrokes are applied.
 
+## Wayland (Linux)
+
+`pynput` talks to X11, so under Wayland it only reaches XWayland windows — native
+Wayland apps never see the events. The bridge detects `WAYLAND_DISPLAY` and
+switches to **ydotool**, which injects through `/dev/uinput` and therefore works in
+any compositor.
+
+```bash
+# Debian / Ubuntu
+sudo apt install ydotool
+sudo systemctl enable --now ydotool        # 或: systemctl --user enable --now ydotoold
+
+# Arch
+sudo pacman -S ydotool && sudo systemctl enable --now ydotool
+
+# Fedora
+sudo dnf install ydotool && sudo systemctl enable --now ydotool
+```
+
+The daemon needs access to `/dev/uinput`. If it runs as your user, allow it once:
+
+```bash
+echo 'KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"' \
+  | sudo tee /etc/udev/rules.d/80-uinput.rules
+sudo udevadm control --reload && sudo udevadm trigger
+sudo usermod -aG input "$USER"      # 重新登录生效
+```
+
+`/healthz` reports the active backend, and the page shows it next to the screen
+size (`已连接 · 2560×1600 · ydotool`). Force one with `BRIDGE_BACKEND=pynput` or
+`BRIDGE_BACKEND=ydotool`.
+
+**Known limit:** ydotool 1.0.4 has no wheel command, so scrolling does not work on
+that backend (clicks, movement and the keyboard do). On Wayland the bridge also
+reads the real mode from `/sys/class/drm` instead of the scaled XWayland size, so
+fractional scaling does not offset the cursor.
+
 ## Security
 
 - Binds `127.0.0.1` only. Nothing outside the machine can reach it, and it is not
