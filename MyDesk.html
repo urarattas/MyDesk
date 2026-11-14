@@ -621,8 +621,10 @@ details .dbody>*:first-child{margin-top:12px}
         <div class="btn-row">
           <button class="btn sm" id="btnCopyScript">复制脚本</button>
           <button class="btn sm" id="btnDownloadScript">下载 bridge.py</button>
+          <button class="btn sm" id="btnDownloadExe">下载 bridge.exe</button>
         </div>
-        <p class="hint">依赖：<b>Python 3</b> + <b>pynput</b>（<code>pip install pynput</code>）。只绑定 127.0.0.1，不对外暴露。</p>
+        <p class="hint">脚本依赖 <b>Python 3</b> + <b>pynput</b>（<code>pip install pynput</code>）；打包版
+          <b>MyDeskBridge.exe</b> 不需要装 Python，双击即用。两者都只绑定 127.0.0.1，不对外暴露。</p>
       </div>
     </details>
 
@@ -2614,6 +2616,13 @@ function bindUI() {
   byId("btnBridgeConnect").addEventListener("click", bridgePing);
   byId("btnCopyScript").addEventListener("click", (e) => copyText(BRIDGE_SCRIPT, e.currentTarget));
   byId("btnDownloadScript").addEventListener("click", () => downloadText(BRIDGE_SCRIPT, "bridge.py", "text/x-python"));
+  byId("btnDownloadExe").addEventListener("click", () => {
+    if (!BRIDGE_EXE_URL || BRIDGE_EXE_URL.includes("OWNER/REPO")) {
+      toast("打包版需要仓库地址：把 BRIDGE_EXE_URL 改成你的 Release 链接", "err", 4200);
+      return;
+    }
+    window.open(BRIDGE_EXE_URL, "_blank", "noopener");
+  });
 
   window.addEventListener("beforeunload", () => {
     srvSend({ type: "bye" });
@@ -2624,6 +2633,9 @@ function bindUI() {
 /* ============================================================
    10. 本机桥接脚本（可选，用于真正的系统级操控）
    ============================================================ */
+// 打包好的 Windows 程序（由 .github/workflows/bridge.yml 构建并挂到 Release）
+const BRIDGE_EXE_URL = "https://github.com/urarattas/MyDesk/releases/latest/download/MyDeskBridge.exe";
+
 const BRIDGE_SCRIPT = `#!/usr/bin/env python3
 # MyDesk bridge - 把浏览器收到的键鼠事件注入本机系统
 # 依赖: pip install pynput   |   仅监听 127.0.0.1:8765
@@ -2639,13 +2651,30 @@ except ImportError:
 PORT = 8765
 mouse, kb = MouseCtl(), KeyCtl()
 
-try:
-    import tkinter as tk
-    _r = tk.Tk(); _r.withdraw()
-    SW, SH = _r.winfo_screenwidth(), _r.winfo_screenheight()
-    _r.destroy()
-except Exception:
-    SW, SH = 1920, 1080
+def screen_size():
+    """当前屏幕分辨率。Windows 走 GetSystemMetrics，并先声明 DPI 感知：
+    否则高缩放比下拿到的是逻辑像素，鼠标只会落到左上角一块区域。"""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            except Exception:
+                ctypes.windll.user32.SetProcessDPIAware()
+            u = ctypes.windll.user32
+            return u.GetSystemMetrics(0), u.GetSystemMetrics(1)
+        except Exception:
+            pass
+    try:
+        import tkinter as tk
+        _r = tk.Tk(); _r.withdraw()
+        size = (_r.winfo_screenwidth(), _r.winfo_screenheight())
+        _r.destroy()
+        return size
+    except Exception:
+        return 1920, 1080
+
+SW, SH = screen_size()
 
 BTN = {0: Button.left, 1: Button.middle, 2: Button.right}
 MODS = [(1, Key.ctrl), (2, Key.shift), (4, Key.alt), (8, Key.cmd)]

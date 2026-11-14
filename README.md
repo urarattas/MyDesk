@@ -98,6 +98,18 @@ disconnects, and garbage-collected if nobody ever joins.
 - The process runs as the unprivileged `node` user in the image and exposes one
   port. It holds no state on disk.
 
+## Optional input bridge
+
+Browsers cannot inject OS-level input. Two forms of the same agent are available
+from the **系统级操控** panel:
+
+- `bridge/bridge.py` — `pip install pynput` and run it.
+- `MyDeskBridge.exe` — packaged with PyInstaller, no Python needed. Download it
+  from the [releases page](https://github.com/urarattas/MyDesk/releases); CI builds
+  and smoke-tests it on `windows-latest` for every change under `bridge/`.
+
+Both listen on `127.0.0.1:8765` only. See [bridge/README.md](bridge/README.md).
+
 ## Development
 
 ```bash
