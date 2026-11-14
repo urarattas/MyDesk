@@ -891,7 +891,7 @@ const S = {
   warnedDc: false,
   stats: { timer: 0, pingTimer: 0, lastIn: 0, lastOut: 0, lastTs: 0, lastInFrames: 0, lastOutFrames: 0, ping: null, pingId: 0, pingSent: new Map() },
   testTimer: 0,
-  input: { held: new Set(), active: false, keyLock: false, raf: 0, pending: null, wheel: 0, wheelTimer: 0 },
+  input: { held: new Set(), active: false, keyLock: false, raf: 0, pending: null, wheel: 0, wheelTimer: 0, downOnStage: false },
   hideCursor: true,
   remoteSharing: null,
   replacingStream: false,
@@ -2398,6 +2398,9 @@ function bindUI() {
   });
 
   const upHandler = (ev) => {
+    // 只有按下是打在画面上，抬起才需要通知远端（否则会给对方发一个孤立的抬键）
+    if (!S.input.downOnStage) return;
+    S.input.downOnStage = false;
     if (!canSendInput()) return;
     const p = normPoint(ev);
     sendInput({ t: "mb", d: 0, b: ev.button, x: p.x, y: p.y });
