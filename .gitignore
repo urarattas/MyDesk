@@ -1,0 +1,4 @@
+node_modules/
+.devtest/
+.DS_Store
+*.log
