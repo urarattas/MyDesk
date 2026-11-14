@@ -923,6 +923,8 @@ const S = {
   wantControl: false,
   remoteAllows: false,
   bridge: { ok: false, url: "http://127.0.0.1:8765", queue: [], inflight: false, checkedAt: 0 },
+  remoteBridge: null,
+  warnedDc: false,
   stats: { timer: 0, pingTimer: 0, lastIn: 0, lastOut: 0, lastTs: 0, lastInFrames: 0, lastOutFrames: 0, ping: null, pingId: 0, pingSent: new Map() },
   testTimer: 0,
   input: { held: new Set(), active: false, keyLock: false, raf: 0, pending: null, wheel: 0, wheelTimer: 0 },
@@ -1006,9 +1008,13 @@ function render() {
   byId("swAllow").disabled = !S.pc;
 
   if (live) {
-    byId("controlHint").textContent = S.remoteAllows
-      ? "点击右侧画面接管键鼠；Esc 释放，再次点击画面继续。"
-      : "对方尚未授权控制，可先勾选上方开关发起请求。";
+    if (!S.remoteAllows) {
+      byId("controlHint").textContent = "对方尚未授权控制，可先勾选上方开关发起请求。";
+    } else if (S.remoteBridge === false) {
+      byId("controlHint").textContent = "对方的本机桥接未连接，键鼠事件收不到；让对方在「系统级操控」里点一次检测。";
+    } else {
+      byId("controlHint").textContent = "点击右侧画面接管键鼠；Esc 释放，再次点击画面继续。";
+    }
   } else {
     byId("controlHint").textContent = "连接后可用。对方未授权时无法操作。";
   }
@@ -1382,6 +1388,8 @@ function closePeer(silent) {
   S.rxSlots = [];
   S.remoteSlot = 0;
   S.remoteVideoTrack = null;
+  S.remoteBridge = null;
+  S.warnedDc = false;
   byId("swControl").checked = false;
   byId("swAllow").checked = false;
   S.allowControl = false;
@@ -1834,7 +1842,16 @@ function maybeLive() {
 }
 
 function onConnected() {
-  if (S.phase === "live") return;
+  if (S.phase === "live") {
+    // ICE 抖动后恢复：别让界面停在“连接中断”，并把权限/编码/桥接状态重新同步一次
+    setPill("已连接 · P2P", "on");
+    S.warnedDc = false;
+    sendCtl({ t: "perm", allow: S.allowControl });
+    sendCtl({ t: "codec", i: S.activeSlot });
+    reportBridgeState();
+    log("连接已恢复，状态已重新同步", "ok");
+    return;
+  }
   setPhase("live");
   setPill("已连接 · P2P", "on");
   log("P2P 直连已建立", "ok");
@@ -1849,6 +1866,7 @@ function onConnected() {
   refreshCodecInfo();
   sendCtl({ t: "perm", allow: S.allowControl });
   sendCtl({ t: "codec", i: S.activeSlot });
+  reportBridgeState();
 }
 
 function sendCtl(obj) {
@@ -1879,6 +1897,11 @@ function onCtlMessage(data) {
       byId("permBanner").hidden = false;
       toast("对方请求控制你的电脑", "", 4000);
       log("收到控制请求", "warn");
+      break;
+    case "bridge":
+      S.remoteBridge = !!m.ok;
+      if (!m.ok && S.wantControl) toast("对方本机桥接未连接，键鼠不会生效", "err", 4000);
+      render();
       break;
     case "codec": {
       const i = Number(m.i) | 0;
@@ -2227,6 +2250,12 @@ function startStats() {
     byId("hRtt").textContent = lat == null ? "—" : (lat <= 0 ? "<1 ms" : lat + " ms");
 
     refreshCodecInfo();
+    // 数据通道（不是媒体）断了的话键鼠会静默失效，得让人知道
+    if (!S.warnedDc && S.dcInput && S.dcInput.readyState === "closed") {
+      S.warnedDc = true;
+      log("数据通道已断开：需要重新握手才能恢复控制", "err");
+      toast("数据通道已断开，控制不可用；请断开后重新连接", "err", 5000);
+    }
     // 画面尺寸变化时刷新遮挡层
     updateStageOverlay();
   }, 1000);
@@ -2435,10 +2464,14 @@ async function pumpBridge() {
     if (!res.ok) throw new Error("HTTP " + res.status);
   } catch (e) {
     S.bridge.queue.length = 0;
-    S.bridge.ok = false;
-    setBridgeStatus(false);
-    log("本机桥接断开，输入仅在本页回显", "warn");
-    toast("本机桥接已断开：键鼠不会传到系统", "err");
+    if (S.bridge.ok) {
+      S.bridge.ok = false;
+      setBridgeStatus(false);
+      log("本机桥接断开，正在自动重连…", "warn");
+      toast("本机桥接断开，正在自动重连", "err", 3000);
+      reportBridgeState();
+    }
+    scheduleBridgeRetry(2000);
   }
   S.bridge.inflight = false;
   if (S.bridge.queue.length) pumpBridge();
@@ -2455,29 +2488,62 @@ function setBridgeStatus(ok, screen) {
   }
 }
 
-async function bridgePing() {
+/**
+ * 桥接会自己恢复：一次请求失败（休眠、进程重启、localhost 握手被打断）不应该
+ * 让键鼠永久失效。失败后按 3s→6s→12s→15s 退避重试，直到重新连上。
+ */
+let bridgeRetryTimer = 0;
+
+function scheduleBridgeRetry(delay) {
+  if (bridgeRetryTimer) return;
+  const wait = delay || 3000;
+  bridgeRetryTimer = setTimeout(async () => {
+    bridgeRetryTimer = 0;
+    if (S.bridge.ok) return;
+    await bridgePing({ silent: true });
+    if (!S.bridge.ok) scheduleBridgeRetry(Math.min(wait * 2, 15000));
+  }, wait);
+}
+
+function reportBridgeState() {
+  if (S.pc) sendCtl({ t: "bridge", ok: S.bridge.ok });
+}
+
+async function bridgePing(opts) {
+  const silent = !!(opts && opts.silent);
   const url = byId("bridgeUrl").value.trim().replace(/\/+$/, "") || "http://127.0.0.1:8765";
-  byId("btnBridgeConnect").disabled = true;
-  byId("btnBridgeConnect").textContent = "检测中…";
+  if (!silent) {
+    byId("btnBridgeConnect").disabled = true;
+    byId("btnBridgeConnect").textContent = "检测中…";
+  }
   try {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 1800);
     const res = await fetch(url + "/health", { signal: ctl.signal, cache: "no-store" });
     clearTimeout(timer);
     const info = await res.json();
+    const back = !S.bridge.ok;
     S.bridge.url = url;
     S.bridge.ok = true;
     setBridgeStatus(true, info.screen);
-    log("本机桥接已连接：" + url, "ok");
-    toast("系统级操控已就绪", "ok");
+    if (back) {
+      log("本机桥接已恢复：" + url, "ok");
+      if (!silent) toast("系统级操控已就绪", "ok");
+    }
+    reportBridgeState();
   } catch (e) {
+    const was = S.bridge.ok;
     S.bridge.ok = false;
     setBridgeStatus(false);
-    log("未检测到桥接：" + url, "warn");
-    toast("未检测到本机桥接。展开卡片按提示运行 bridge.py 后重试", "err", 4200);
+    if (!silent || was) log("本机桥接不可用：" + url, "warn");
+    if (!silent) toast("未检测到本机桥接。展开卡片按提示运行 bridge.py 后重试", "err", 4200);
+    reportBridgeState();
+    scheduleBridgeRetry(3000);
   } finally {
-    byId("btnBridgeConnect").disabled = false;
-    byId("btnBridgeConnect").textContent = "检测";
+    if (!silent) {
+      byId("btnBridgeConnect").disabled = false;
+      byId("btnBridgeConnect").textContent = "检测";
+    }
   }
 }
 
@@ -2639,6 +2705,13 @@ function bindUI() {
   document.addEventListener("keydown", onKeyDown, true);
   document.addEventListener("keyup", onKeyUp, true);
   window.addEventListener("blur", () => { if (S.input.active) deactivateControl(true); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && !S.bridge.ok) {
+      clearTimeout(bridgeRetryTimer);
+      bridgeRetryTimer = 0;
+      bridgePing({ silent: true });
+    }
+  });
 
   byId("btnFullscreen").addEventListener("click", () => {
     if (!document.fullscreenElement) {
