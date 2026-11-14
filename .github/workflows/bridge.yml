@@ -80,7 +80,25 @@ jobs:
             bridge/dist/MyDeskBridge.exe.sha256
           if-no-files-found: error
 
-      - name: Attach to release
+      # 默认分支每次构建都更新一个滚动 Release，下载链接永远有效
+      - name: Publish rolling release
+        if: github.ref == 'refs/heads/server'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view bridge-latest >/dev/null 2>&1 || \
+            gh release create bridge-latest \
+              --title "MyDeskBridge (latest)" \
+              --notes "Automatically built from ${GITHUB_SHA:0:7}." \
+              --latest
+          gh release upload bridge-latest \
+            bridge/dist/MyDeskBridge.exe \
+            bridge/dist/MyDeskBridge.exe.sha256 \
+            --clobber
+          gh release edit bridge-latest --latest
+
+      - name: Attach to versioned release
         if: startsWith(github.ref, 'refs/tags/bridge-v')
         uses: softprops/action-gh-release@v2
         with:
