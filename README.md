@@ -46,8 +46,9 @@ and you get screen sharing plus remote mouse/keyboard in both directions.
 
 ## Known limitations
 
-- A browser cannot inject OS-level input. The UI can hand out an optional local bridge
-  (`bridge.py`) that applies remote input to the real desktop.
+- A browser cannot inject OS-level input. An optional local bridge — `bridge/bridge.py`
+  or the packaged `MyDeskBridge.exe` — applies remote input to the real desktop. Both
+  are handed out from the **系统级操控** panel and listen on `127.0.0.1:8765` only.
 - Symmetric NAT on both ends cannot be traversed without a relay. Add TURN under
   **高级：自定义 STUN / TURN**, or put both machines on a virtual LAN (e.g. EasyTier —
   the UI ships a small STUN server for that case).

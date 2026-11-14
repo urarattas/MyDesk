@@ -2,3 +2,9 @@ node_modules/
 .devtest/
 .DS_Store
 *.log
+.wine/
+.winbuild/
+bridge/dist/
+bridge/build/
+__pycache__/
+*.spec
