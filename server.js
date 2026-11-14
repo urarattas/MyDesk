@@ -18,6 +18,7 @@
  *   HOST              bind address       (default 0.0.0.0)
  *   ROOM_TTL_MS       empty room TTL     (default 30 min)
  *   ALLOW_ANY_ORIGIN  skip Origin check  (default 0)
+ *   STRICT_ORIGIN     reject on Origin/host mismatch instead of warning (default 0)
  */
 "use strict";
 
@@ -30,6 +31,7 @@ const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || "0.0.0.0";
 const ROOM_TTL_MS = Number(process.env.ROOM_TTL_MS || 30 * 60 * 1000);
 const ALLOW_ANY_ORIGIN = process.env.ALLOW_ANY_ORIGIN === "1";
+const STRICT_ORIGIN = process.env.STRICT_ORIGIN === "1";
 const APP_FILE = path.join(__dirname, "MyDesk.html");
 const MAX_FRAME = 256 * 1024;
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -247,6 +249,7 @@ class Conn {
   cleanup() {
     if (!conns.has(this)) return;
     conns.delete(this);
+    console.log(`[ws] #${this.id} closed (${conns.size} sockets)`);
     this.alive = false;
     leaveRoom(this);
     try { this.socket.destroy(); } catch (e) { /* ignore */ }
@@ -304,13 +307,51 @@ function handleMessage(conn, msg) {
 /* HTTP + upgrade                                                      */
 /* ------------------------------------------------------------------ */
 
+/** 只保留主机名：去掉协议、端口和逗号分隔的代理链 */
+function hostOnly(value) {
+  const v = String(value || "").split(",")[0].trim();
+  if (!v) return "";
+  return v.replace(/^[a-z]+:\/\//i, "").split("/")[0].split(":")[0].toLowerCase();
+}
+
+/**
+ * 经反向代理/隧道时 Host 经常被改写（cloudflared 的 httpHostHeader、带端口、
+ * 只保留公网域名等），所以这里只比对主机名，并优先使用 X-Forwarded-Host。
+ * 协议本身没有“环境权限”：房间号才是凭证，因此默认只告警，不拒绝。
+ */
+function originAllowed(req) {
+  if (ALLOW_ANY_ORIGIN) return true;
+  const origin = req.headers.origin;
+  if (!origin) return true;                     // 非浏览器客户端
+  let originHost;
+  try { originHost = new URL(origin).hostname.toLowerCase(); } catch (e) { return true; }
+  const host = hostOnly(req.headers["x-forwarded-host"] || req.headers.host);
+  if (!host) return true;
+  return originHost === host;
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || "/", "http://localhost");
 
   if (url.pathname === "/healthz") {
-    const body = Buffer.from(JSON.stringify({ ok: true, rooms: rooms.size }));
+    const body = Buffer.from(JSON.stringify({
+      ok: true,
+      rooms: rooms.size,
+      sockets: conns.size,
+      uptime: Math.round(process.uptime())
+    }));
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     res.end(req.method === "HEAD" ? undefined : body);
+    return;
+  }
+
+  if (url.pathname === "/ws") {
+    res.writeHead(426, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Upgrade": "websocket",
+      "Connection": "Upgrade"
+    });
+    res.end("This endpoint only accepts a WebSocket upgrade.\n");
     return;
   }
 
@@ -335,23 +376,21 @@ server.on("upgrade", (req, socket, head) => {
   const key = req.headers["sec-websocket-key"];
 
   if (url.pathname !== "/ws" || !key) {
+    console.warn(`[ws] rejected upgrade: path=${url.pathname} key=${key ? "ok" : "missing"}`);
     socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
     socket.destroy();
     return;
   }
 
-  if (!ALLOW_ANY_ORIGIN) {
-    const origin = req.headers.origin;
-    const host = req.headers.host || "";
-    if (origin) {
-      let ok = false;
-      try { ok = new URL(origin).host === host; } catch (e) { ok = false; }
-      if (!ok) {
-        socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
-        socket.destroy();
-        return;
-      }
+  if (!originAllowed(req)) {
+    const detail = `origin=${req.headers.origin || "-"} host=${req.headers.host || "-"} xfh=${req.headers["x-forwarded-host"] || "-"}`;
+    if (STRICT_ORIGIN) {
+      console.warn(`[ws] rejected upgrade (origin mismatch, STRICT_ORIGIN=1): ${detail}`);
+      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
     }
+    console.warn(`[ws] origin mismatch, allowed (set STRICT_ORIGIN=1 to reject): ${detail}`);
   }
 
   const accept = crypto.createHash("sha1").update(key + WS_GUID).digest("base64");
@@ -366,9 +405,10 @@ server.on("upgrade", (req, socket, head) => {
     // Data that arrived with the handshake belongs to the WebSocket stream.
     const conn = new Conn(socket);
     socket.unshift(head);
-    void conn;
+    console.log(`[ws] #${conn.id} open (${conns.size} sockets)`);
   } else {
-    void new Conn(socket);
+    const conn = new Conn(socket);
+    console.log(`[ws] #${conn.id} open (${conns.size} sockets)`);
   }
 });
 
