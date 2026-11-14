@@ -263,6 +263,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 }
 .spinner{width:13px;height:13px;border:2px solid rgba(255,255,255,.18);border-top-color:#7d94ff;border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+.kbd-hud.ghost-hint{color:#b9c6e2;background:rgba(10,14,22,.72);border-color:var(--line-2);opacity:.9}
 .kbd-hud{
   position:absolute;left:50%;top:12px;transform:translateX(-50%);
   display:flex;align-items:center;gap:8px;font-size:11.5px;color:#b7f7e3;
@@ -717,7 +718,7 @@ details .dbody>*:first-child{margin-top:12px}
       <div class="stage-wait hidden" id="stageWait"><i class="spinner"></i><span>等待对方共享屏幕…</span></div>
 
       <div class="kbd-hud hidden" id="kbdHud">
-        <span>⌨</span><span>键盘已接管 · 按 Esc 释放</span>
+        <span id="kbdHudIcon">⌨</span><span id="kbdHudText">键鼠已接管 · Esc 释放</span>
       </div>
 
       <div class="peer-chip hidden" id="peerChip"><i class="dot"></i><span>对方屏幕</span></div>
@@ -914,10 +915,10 @@ const S = {
   allowControl: false,
   wantControl: false,
   remoteAllows: false,
-  bridge: { ok: false, url: "http://127.0.0.1:8765", queue: [], timer: 0, checkedAt: 0 },
+  bridge: { ok: false, url: "http://127.0.0.1:8765", queue: [], inflight: false, checkedAt: 0 },
   stats: { timer: 0, pingTimer: 0, lastIn: 0, lastOut: 0, lastTs: 0, lastInFrames: 0, lastOutFrames: 0, ping: null, pingId: 0, pingSent: new Map() },
   testTimer: 0,
-  input: { held: new Set(), captured: false, raf: 0, pending: null, wheel: 0, wheelTimer: 0 },
+  input: { held: new Set(), active: false, keyLock: false, raf: 0, pending: null, wheel: 0, wheelTimer: 0 },
   remoteSharing: null,
   replacingStream: false,
   candLocal: null,
@@ -998,7 +999,7 @@ function render() {
 
   if (live) {
     byId("controlHint").textContent = S.remoteAllows
-      ? "对方已授权：点击右侧画面即可接管键鼠，Esc 释放键盘。"
+      ? "点击右侧画面接管键鼠；Esc 释放，再次点击画面继续。"
       : "对方尚未授权控制，可先勾选上方开关发起请求。";
   } else {
     byId("controlHint").textContent = "连接后可用。对方未授权时无法操作。";
@@ -1019,8 +1020,19 @@ function updateStageOverlay() {
   dom.stageIdle.classList.toggle("hidden", live);
   dom.stageWait.classList.toggle("hidden", !(live && !hasRemoteVideo));
   dom.peerChip.classList.toggle("hidden", !(live && hasRemoteVideo));
-  dom.kbdHud.classList.toggle("hidden", !S.input.captured);
-  dom.stage.classList.toggle("capturing", S.input.captured);
+  const hud = dom.kbdHud;
+  if (S.input.active) {
+    hud.className = "kbd-hud";
+    byId("kbdHudIcon").textContent = "⌨";
+    byId("kbdHudText").textContent = "键鼠已接管 · Esc 释放";
+  } else if (live && hasRemoteVideo && S.wantControl && S.remoteAllows) {
+    hud.className = "kbd-hud ghost-hint";
+    byId("kbdHudIcon").textContent = "◎";
+    byId("kbdHudText").textContent = "点击画面接管键鼠";
+  } else {
+    hud.className = "kbd-hud hidden";
+  }
+  dom.stage.classList.toggle("capturing", S.input.active);
 }
 
 function setPhase(p) {
@@ -1364,6 +1376,7 @@ function closePeer(silent) {
   byId("liveStats").hidden = true;
   byId("liveMode").textContent = "P2P 直连";
   byId("permBanner").hidden = true;
+  deactivateControl(true);
   releaseKeyboard();
   render();
 }
@@ -2230,7 +2243,7 @@ function contentRect(video) {
 }
 
 function canSendInput() {
-  return S.phase === "live" && S.wantControl && S.remoteAllows &&
+  return S.phase === "live" && S.wantControl && S.remoteAllows && S.input.active &&
     S.dcInput && S.dcInput.readyState === "open";
 }
 
@@ -2266,13 +2279,7 @@ function modsOf(ev) {
   return (ev.ctrlKey ? 1 : 0) | (ev.shiftKey ? 2 : 0) | (ev.altKey ? 4 : 0) | (ev.metaKey ? 8 : 0);
 }
 
-function captureKeyboard(on) {
-  if (on === S.input.captured) return;
-  S.input.captured = on;
-  if (!on) releaseKeyboard();
-  updateStageOverlay();
-}
-
+/** Esc 释放后要按下的键还留在对方那儿，这里补发 keyup */
 function releaseKeyboard() {
   if (S.input.held.size && S.dcInput && S.dcInput.readyState === "open") {
     for (const code of S.input.held) {
@@ -2280,31 +2287,64 @@ function releaseKeyboard() {
     }
   }
   S.input.held.clear();
-  S.input.captured = false;
-  if (dom.kbdHud) dom.kbdHud.classList.add("hidden");
-  if (dom.stage) dom.stage.classList.remove("capturing");
 }
 
-const BLOCK_BROWSER_KEYS = new Set(["F5", "F11", "F12"]);
-function isBrowserShortcut(ev) {
-  if (BLOCK_BROWSER_KEYS.has(ev.code)) return true;
-  if ((ev.ctrlKey || ev.metaKey) && ev.shiftKey) return true;   // Ctrl+Shift+I / J / C …
-  if ((ev.ctrlKey || ev.metaKey) && (ev.code === "KeyR" || ev.code === "KeyW" || ev.code === "KeyT")) return true;
+/** 键盘锁定：接管后浏览器快捷键（Ctrl+W / Ctrl+T / F11 …）交给页面而不是本机 */
+async function lockLocalKeyboard() {
+  if (!navigator.keyboard || !navigator.keyboard.lock) return false;
+  try { await navigator.keyboard.lock(); return true; } catch (e) { return false; }
+}
+
+function unlockLocalKeyboard() {
+  try { if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock(); } catch (e) {}
+}
+
+async function activateControl() {
+  if (S.input.active) return;
+  S.input.active = true;
+  updateStageOverlay();
+  const locked = await lockLocalKeyboard();
+  S.input.keyLock = locked;
+  log(locked ? "键盘已锁定，浏览器快捷键改发往远端" : "键盘锁定不可用：部分浏览器快捷键仍会作用于本机",
+      locked ? "ok" : "warn");
+  toast(locked ? "键鼠已接管 · Esc 释放" : "键鼠已接管（快捷键锁定不可用）", locked ? "ok" : "", 2000);
+}
+
+function deactivateControl(silent) {
+  if (!S.input.active) return;
+  releaseKeyboard();
+  S.input.active = false;
+  S.input.keyLock = false;
+  unlockLocalKeyboard();
+  updateStageOverlay();
+  if (!silent) toast("已释放键鼠 · 点击画面继续");
+}
+
+/**
+ * 少数组合会让浏览器/系统抢走，preventDefault 也拦不住；
+ * 没有键盘锁定时只能放行，免得把它们吞掉却什么也没发出去。
+ */
+function isReservedByBrowser(ev) {
+  const code = ev.code;
+  if (code === "F11" || code === "F12") return true;
+  const mod = ev.ctrlKey || ev.metaKey;
+  if (!mod) return false;
+  if (code === "KeyW" || code === "KeyT" || code === "KeyN") return true;
+  if (ev.shiftKey && (code === "KeyI" || code === "KeyJ" || code === "KeyC")) return true;
   return false;
 }
 
 function onKeyDown(ev) {
-  if (!S.input.captured || !canSendInput()) return;
-  if (isBrowserShortcut(ev)) return;
+  if (!S.input.active || !canSendInput()) return;
   const ae = document.activeElement;
   if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
 
   if (ev.code === "Escape") {
     ev.preventDefault();
-    captureKeyboard(false);
-    toast("已释放键盘");
+    deactivateControl();
     return;
   }
+  if (isReservedByBrowser(ev) && !S.input.keyLock) return;
   ev.preventDefault();
   ev.stopPropagation();
   if (ev.repeat) return;
@@ -2313,8 +2353,8 @@ function onKeyDown(ev) {
 }
 
 function onKeyUp(ev) {
-  if (!S.input.captured) return;
-  if (isBrowserShortcut(ev)) return;
+  if (!S.input.active) return;
+  if (isReservedByBrowser(ev) && !S.input.keyLock) return;
   const ae = document.activeElement;
   if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
   ev.preventDefault();
@@ -2353,20 +2393,24 @@ function onInputMessage(raw) {
   bridgeSend(ev);
 }
 
+/**
+ * 不排队等定时器：上一批请求一回来就立刻发下一批。
+ * 之前固定等 30ms 才发，等于把鼠标更新率压到 33Hz，手感就是从这里丢的。
+ */
 function bridgeSend(ev) {
   if (!S.bridge.ok) return;
   S.bridge.queue.push(ev);
-  if (S.bridge.queue.length > 300) S.bridge.queue.splice(0, S.bridge.queue.length - 300);
-  if (!S.bridge.timer) S.bridge.timer = setTimeout(flushBridge, 30);
+  if (S.bridge.queue.length > 400) S.bridge.queue.splice(0, S.bridge.queue.length - 400);
+  pumpBridge();
 }
 
-async function flushBridge() {
-  S.bridge.timer = 0;
-  if (!S.bridge.queue.length) return;
-  const events = S.bridge.queue.splice(0, 220);
+async function pumpBridge() {
+  if (S.bridge.inflight || !S.bridge.queue.length) return;
+  S.bridge.inflight = true;
+  const events = S.bridge.queue.splice(0, 240);
   try {
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 1500);
+    const timer = setTimeout(() => ctl.abort(), 2000);
     const res = await fetch(S.bridge.url.replace(/\/+$/, "") + "/input", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2376,11 +2420,14 @@ async function flushBridge() {
     clearTimeout(timer);
     if (!res.ok) throw new Error("HTTP " + res.status);
   } catch (e) {
+    S.bridge.queue.length = 0;
     S.bridge.ok = false;
     setBridgeStatus(false);
     log("本机桥接断开，输入仅在本页回显", "warn");
     toast("本机桥接已断开：键鼠不会传到系统", "err");
   }
+  S.bridge.inflight = false;
+  if (S.bridge.queue.length) pumpBridge();
 }
 
 function setBridgeStatus(ok, screen) {
@@ -2520,21 +2567,20 @@ function bindUI() {
   // 舞台交互
   dom.stage.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0 && ev.button !== 2 && ev.button !== 1) return;
+    if (S.phase !== "live") return;
     if (!S.wantControl) {
-      if (S.phase === "live" && remoteVisible()) {
-        toast("先在左侧开启「我可以控制对方」");
-      }
+      if (remoteVisible()) toast("先在左侧开启「我可以控制对方」");
       return;
     }
     if (!S.remoteAllows) { toast("对方尚未授权控制，已发送请求"); sendCtl({ t: "ask" }); return; }
-    if (!canSendInput()) return;
     if (!remoteVisible()) { toast("对方还没有共享画面"); return; }
 
     ev.preventDefault();
     dom.stage.focus();
-    dom.stage.setPointerCapture(ev.pointerId);
+    try { dom.stage.setPointerCapture(ev.pointerId); } catch (e) {}
+    // 点击即接管：同时把这次点击发给远端
+    if (!S.input.active) activateControl();
     const p = normPoint(ev);
-    if (!S.input.captured && ev.pointerType !== "touch") captureKeyboard(true);
     sendInput({ t: "mb", d: 1, b: ev.button, x: p.x, y: p.y, bts: ev.buttons | 0 });
   });
 
@@ -2572,7 +2618,7 @@ function bindUI() {
 
   document.addEventListener("keydown", onKeyDown, true);
   document.addEventListener("keyup", onKeyUp, true);
-  window.addEventListener("blur", () => { if (S.input.captured) releaseKeyboard(); });
+  window.addEventListener("blur", () => { if (S.input.active) deactivateControl(true); });
 
   byId("btnFullscreen").addEventListener("click", () => {
     if (!document.fullscreenElement) {
@@ -2689,6 +2735,23 @@ SPECIAL = {
 for _i in range(1, 13):
     SPECIAL["F" + str(_i)] = getattr(Key, "f" + str(_i))
 
+# 各平台不一定都有这些键，缺的跳过
+_EXTRA = {
+    "PrintScreen": "print_screen", "ScrollLock": "scroll_lock", "Pause": "pause",
+    "ContextMenu": "menu",
+    "AudioVolumeMute": "media_volume_mute", "AudioVolumeDown": "media_volume_down",
+    "AudioVolumeUp": "media_volume_up", "MediaPlayPause": "media_play_pause",
+    "MediaStop": "media_stop", "MediaTrackNext": "media_next",
+    "MediaTrackPrevious": "media_previous",
+    "BrowserBack": "browser_back", "BrowserForward": "browser_forward",
+    "BrowserRefresh": "browser_refresh", "BrowserHome": "browser_home",
+    "BrowserSearch": "browser_search", "BrowserFavorites": "browser_favorites",
+}
+for _code, _attr in _EXTRA.items():
+    _key = getattr(Key, _attr, None)
+    if _key is not None:
+        SPECIAL[_code] = _key
+
 held_mods = set()
 held_by_code = {}          # code -> 实际按下的键对象，避免大小写变化导致按键卡住
 
@@ -2755,6 +2818,27 @@ def release_all():
         except Exception: pass
     held_mods.clear()
 
+def apply_events(events):
+    """一次请求里的连续鼠标移动只落最后一次：中间位置没有意义，
+    还能把每帧几十次 SetCursorPos 压成一次。"""
+    pending_move = None
+    for ev in events:
+        try:
+            if ev.get("t") == "m":
+                pending_move = ev
+                continue
+            if pending_move is not None:
+                handle(pending_move)
+                pending_move = None
+            handle(ev)
+        except Exception:
+            pass
+    if pending_move is not None:
+        try:
+            handle(pending_move)
+        except Exception:
+            pass
+
 def handle(ev):
     t = ev.get("t")
     if t == "release":
@@ -2775,6 +2859,9 @@ def handle(ev):
         kb.type(ev.get("s", ""))
 
 class Handler(BaseHTTPRequestHandler):
+    # keep-alive：否则每个鼠标事件都要新建一次 TCP 连接，几十赫兹下延迟很明显
+    protocol_version = "HTTP/1.1"
+
     def log_message(self, *a):
         pass
 
@@ -2784,30 +2871,37 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Private-Network", "true")
 
+    def _reply(self, code, body=b"", ctype=None):
+        self.send_response(code)
+        self._cors()
+        if ctype:
+            self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
     def do_OPTIONS(self):
-        self.send_response(204); self._cors(); self.end_headers()
+        self._reply(204)
 
     def do_GET(self):
         body = json.dumps({"ok": True, "screen": [SW, SH]}).encode()
-        self.send_response(200); self._cors()
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers(); self.wfile.write(body)
+        self._reply(200, body, "application/json")
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(n) if n else b"{}"
         try:
-            data = json.loads(self.rfile.read(n) or b"{}")
-            for ev in data.get("events", []):
-                try: handle(ev)
-                except Exception: pass
+            apply_events(json.loads(raw).get("events", []))
         except Exception:
             pass
-        self.send_response(204); self._cors(); self.end_headers()
+        self._reply(204)
 
 if __name__ == "__main__":
     print("MyDesk bridge  ->  http://127.0.0.1:%d   screen %dx%d" % (PORT, SW, SH))
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    httpd.daemon_threads = True
+    httpd.serve_forever()
 `;
 
 /* ============================================================

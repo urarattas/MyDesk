@@ -110,6 +110,13 @@ from the **系统级操控** panel:
 
 Both listen on `127.0.0.1:8765` only. See [bridge/README.md](bridge/README.md).
 
+Control is engaged by clicking the video: **Esc releases it, clicking again resumes**.
+While engaged the page requests a [keyboard lock](https://developer.chrome.com/docs/web-platform/keyboard-lock),
+so shortcuts that normally belong to the browser (Ctrl+W, Ctrl+T, F11) are delivered to the
+remote machine instead. Keyboard lock needs Chrome/Edge on a secure context; without it those
+combinations still act locally. `Ctrl+W`-style tab shortcuts are the main ones a page can never
+intercept on its own.
+
 ## Development
 
 ```bash
