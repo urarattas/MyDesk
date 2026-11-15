@@ -386,6 +386,146 @@ BACKEND = pick_backend()
 
 
 # --------------------------------------------------------------------------
+# 系统剪贴板（纯文本）
+# --------------------------------------------------------------------------
+
+def _run_tool(args, data=None, timeout=2):
+    """调用外部剪贴板工具，返回 (stdout, error)。"""
+    try:
+        res = subprocess.run(
+            args,
+            input=data,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+        )
+        if res.returncode != 0:
+            return "", (res.stderr.decode("utf-8", "replace").strip()
+                        or "exit %d" % res.returncode)
+        return res.stdout.decode("utf-8", "replace"), None
+    except Exception as exc:
+        return "", str(exc)
+
+
+def _win_clipboard_get():
+    import ctypes
+    from ctypes import wintypes
+
+    u = ctypes.windll.user32
+    k = ctypes.windll.kernel32
+    u.GetClipboardData.restype = wintypes.HANDLE
+    u.GetClipboardData.argtypes = [wintypes.UINT]
+    k.GlobalLock.restype = wintypes.LPVOID
+    k.GlobalLock.argtypes = [wintypes.HANDLE]
+    k.GlobalUnlock.argtypes = [wintypes.HANDLE]
+
+    CF_UNICODETEXT = 13
+    if not u.OpenClipboard(None):
+        return "", "OpenClipboard failed"
+    try:
+        handle = u.GetClipboardData(CF_UNICODETEXT)
+        if not handle:
+            return "", None
+        ptr = k.GlobalLock(handle)
+        if not ptr:
+            return "", "GlobalLock failed"
+        try:
+            return ctypes.wstring_at(ptr), None
+        finally:
+            k.GlobalUnlock(handle)
+    finally:
+        u.CloseClipboard()
+
+
+def _win_clipboard_set(text):
+    import ctypes
+    from ctypes import wintypes
+
+    u = ctypes.windll.user32
+    k = ctypes.windll.kernel32
+    k.GlobalAlloc.restype = wintypes.HANDLE
+    k.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    k.GlobalLock.restype = wintypes.LPVOID
+    k.GlobalLock.argtypes = [wintypes.HANDLE]
+    k.GlobalUnlock.argtypes = [wintypes.HANDLE]
+    u.SetClipboardData.restype = wintypes.HANDLE
+    u.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+
+    CF_UNICODETEXT = 13
+    GMEM_MOVEABLE = 0x0002
+    data = text.encode("utf-16-le") + b"\x00\x00"
+
+    handle = k.GlobalAlloc(GMEM_MOVEABLE, len(data))
+    if not handle:
+        return "GlobalAlloc failed"
+    ptr = k.GlobalLock(handle)
+    if not ptr:
+        return "GlobalLock failed"
+    ctypes.memmove(ptr, data, len(data))
+    k.GlobalUnlock(handle)
+
+    if not u.OpenClipboard(None):
+        return "OpenClipboard failed"
+    try:
+        u.EmptyClipboard()
+        if not u.SetClipboardData(CF_UNICODETEXT, handle):
+            return "SetClipboardData failed"
+        return None
+    finally:
+        u.CloseClipboard()
+
+
+class Clipboard:
+    """只用纯文本；工具缺失时 name 保持 "none"，页面会提示不可用。"""
+
+    def __init__(self):
+        self.name = "none"
+        self._get = lambda: ("", "unsupported")
+        self._set = lambda text: "unsupported"
+        self._pick()
+
+    def _pick(self):
+        if sys.platform == "win32":
+            self.name = "win32"
+            self._get = _win_clipboard_get
+            self._set = _win_clipboard_set
+            return
+        if sys.platform == "darwin":
+            if shutil.which("pbpaste") and shutil.which("pbcopy"):
+                self.name = "pbcopy"
+                self._get = lambda: _run_tool(["pbpaste"])
+                self._set = lambda t: _run_tool(["pbcopy"], t.encode())[1]
+            return
+        if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-paste") and shutil.which("wl-copy"):
+            self.name = "wl-clipboard"
+            self._get = lambda: _run_tool(["wl-paste", "--no-newline"])
+            self._set = lambda t: _run_tool(["wl-copy"], t.encode())[1]
+            return
+        if shutil.which("xclip"):
+            self.name = "xclip"
+            self._get = lambda: _run_tool(["xclip", "-selection", "clipboard", "-o"])
+            self._set = lambda t: _run_tool(["xclip", "-selection", "clipboard", "-i"], t.encode())[1]
+            return
+        if shutil.which("xsel"):
+            self.name = "xsel"
+            self._get = lambda: _run_tool(["xsel", "--clipboard", "--output"])
+            self._set = lambda t: _run_tool(["xsel", "--clipboard", "--input"], t.encode())[1]
+            return
+
+    def get(self):
+        text, err = self._get()
+        return (text or ""), err
+
+    def set(self, text):
+        if self.name == "win32":
+            return self._set(text)
+        return self._set(text)
+
+
+CLIPBOARD = Clipboard()
+
+
+# --------------------------------------------------------------------------
 # 事件分发
 # --------------------------------------------------------------------------
 
@@ -462,10 +602,17 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(204)
 
     def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        if path == "/clipboard":
+            text, err = CLIPBOARD.get()
+            body = json.dumps({"ok": err is None, "text": text, "error": err}).encode()
+            self._reply(200, body, "application/json")
+            return
         body = json.dumps({
             "ok": True,
             "screen": [SW, SH],
             "backend": BACKEND.name,
+            "clipboard": CLIPBOARD.name,
             "error": BACKEND.error or None,
         }).encode()
         self._reply(200, body, "application/json")
@@ -473,6 +620,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(n) if n else b"{}"
+        path = self.path.split("?", 1)[0]
+        if path == "/clipboard":
+            try:
+                text = json.loads(raw).get("text", "")
+            except Exception:
+                text = ""
+            err = CLIPBOARD.set(str(text))
+            self._reply(204 if err is None else 500)
+            return
         try:
             apply_events(json.loads(raw).get("events", []))
         except Exception:
@@ -486,8 +642,8 @@ if __name__ == "__main__":
         if BACKEND.error:
             print("  " + BACKEND.error, file=sys.stderr)
         print("  On Wayland install ydotool (uinput); on X11 install pynput.", file=sys.stderr)
-    print("MyDesk bridge  ->  http://127.0.0.1:%d   backend=%s   screen %dx%d"
-          % (PORT, BACKEND.name, SW, SH))
+    print("MyDesk bridge  ->  http://127.0.0.1:%d   backend=%s   clipboard=%s   screen %dx%d"
+          % (PORT, BACKEND.name, CLIPBOARD.name, SW, SH))
     httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     httpd.daemon_threads = True
     try:
