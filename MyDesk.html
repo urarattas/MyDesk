@@ -327,6 +327,12 @@ details .dbody>*:first-child{margin-top:12px}
 .ice-adv[open]{padding-bottom:10px}
 .ice-adv textarea{margin-top:2px}
 .ice-adv .row input{flex:1;font-size:11.5px}
+.seg{display:flex;gap:4px;padding:3px;border-radius:10px;background:rgba(0,0,0,.32);border:1px solid var(--line);margin-bottom:11px}
+.seg button{flex:1;height:28px;border-radius:7px;font-size:12px;font-weight:600;color:var(--dim);transition:background .15s,color .15s}
+.seg button.on{background:rgba(255,255,255,.1);color:#e9edf6;box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
+.seg button:disabled{opacity:.35;cursor:not-allowed}
+.room-code{font:700 26px/1.2 var(--mono);letter-spacing:.2em;text-align:center;padding:13px 0 11px;
+  color:#dfe6f7;background:rgba(108,140,255,.08);border:1px dashed rgba(108,140,255,.38);border-radius:12px}
 .probe-list{margin-top:8px;display:flex;flex-direction:column;gap:4px}
 .probe-row{display:flex;align-items:center;gap:8px;font-size:10.5px;font-family:var(--mono);
   padding:5px 8px;border-radius:7px;background:rgba(255,255,255,.025);border:1px solid var(--line)}
@@ -431,12 +437,43 @@ details .dbody>*:first-child{margin-top:12px}
       </div>
 
       <div id="sigIdle">
-        <p class="hint" style="margin-top:0">
-          两端各打开同一个 HTML 文件，<b>手动交换一次握手码</b>即可建立点对点直连。
-          全程无信令服务器、无中继，媒体流走 DTLS-SRTP 端到端加密。
-        </p>
-        <button class="btn primary wide" id="btnHost" style="margin-top:11px">① 创建邀请码（我是被控端）</button>
-        <button class="btn wide" id="btnGuest" style="margin-top:8px">② 接受邀请（我是控制端）</button>
+        <div class="seg" id="modeSeg">
+          <button type="button" data-mode="server">服务器</button>
+          <button type="button" data-mode="manual">手动</button>
+        </div>
+
+        <div id="srvBox">
+          <div id="srvLobby">
+            <p class="hint" style="margin-top:0">
+              在同一台信令服务器上开房，把<b>房间号或链接</b>发给对方即可，不用再复制长串握手码。
+            </p>
+            <button class="btn primary wide" id="btnCreateRoom" style="margin-top:10px">创建房间（我是被控端）</button>
+            <div class="row" style="margin-top:8px">
+              <input type="text" id="joinCode" maxlength="6" placeholder="输入 6 位房间号"
+                     autocomplete="off" spellcheck="false" style="text-transform:uppercase;letter-spacing:.14em">
+              <button class="btn" id="btnJoinRoom">加入</button>
+            </div>
+          </div>
+          <div id="srvRoom" class="hidden">
+            <div class="room-code" id="roomCode">------</div>
+            <p class="hint" id="srvStatus" style="text-align:center;margin-top:6px">等待对方加入…</p>
+            <input type="text" id="roomLink" readonly style="margin-top:8px;font-family:var(--mono);font-size:11px">
+            <div class="btn-row">
+              <button class="btn sm" id="btnCopyLink">复制链接</button>
+              <button class="btn sm ghost" id="btnLeaveRoom">取消</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="manualBox" class="hidden">
+          <p class="hint" style="margin-top:0">
+            两端各打开同一个 HTML 文件，<b>手动交换一次握手码</b>即可建立点对点直连。
+            全程无信令服务器、无中继，媒体流走 DTLS-SRTP 端到端加密。
+          </p>
+          <button class="btn primary wide" id="btnHost" style="margin-top:11px">① 创建邀请码（我是被控端）</button>
+          <button class="btn wide" id="btnGuest" style="margin-top:8px">② 接受邀请（我是控制端）</button>
+        </div>
+
         <label class="sw mini" style="margin-top:10px">
           <input type="checkbox" id="swStun" checked><i></i>
           <span>启用 ICE 服务器（STUN 只做地址发现，不转发数据）</span>
@@ -906,7 +943,8 @@ const S = {
   activeSlot: 0,
   rxSlots: [],
   remoteSlot: 0,
-  remoteVideoTrack: null
+  remoteVideoTrack: null,
+  mode: "manual"
 };
 
 /* ============================================================
@@ -939,19 +977,30 @@ function setPill(text, kind) {
 function render() {
   const p = S.phase;
   const live = p === "live";
+  const roomPhase = p === "srv-room" || p === "srv-connecting";
+  const idleish = p === "idle" || p === "closed" || roomPhase;
 
-  dom.sigIdle.classList.toggle("hidden", !(p === "idle" || p === "closed"));
+  dom.sigIdle.classList.toggle("hidden", !idleish);
   dom.sigHost.classList.toggle("hidden", p !== "host-offer");
   dom.sigGuest.classList.toggle("hidden", !(p === "guest-input" || p === "guest-answer"));
   dom.sigLive.classList.toggle("hidden", !live);
 
   byId("guestStep1").classList.toggle("hidden", p !== "guest-input");
   byId("guestStep2").classList.toggle("hidden", p !== "guest-answer");
+  byId("srvLobby").classList.toggle("hidden", roomPhase);
+  byId("srvRoom").classList.toggle("hidden", !roomPhase);
+  byId("srvStatus").textContent = p === "srv-connecting" ? "对方已加入，正在协商…" : "等待对方加入…";
 
-  dom.btnDisconnect.disabled = !(S.pc && (live || p === "connecting" || p === "host-offer" || p === "guest-answer"));
+  const busy = !!(S.pc && (live || p === "connecting" || p === "host-offer" || p === "guest-answer"))
+    || !!SRV.ws || roomPhase;
+  dom.btnDisconnect.disabled = !busy;
   dom.liveStats.hidden = !live;
 
-  byId("sigTag").textContent = live ? "已直连" : (p === "idle" || p === "closed" ? "零服务器" : "握手中");
+  const idle = p === "idle" || p === "closed";
+  byId("sigTag").textContent = live ? "已直连"
+    : roomPhase ? "信令服务器"
+    : idle ? (S.mode === "server" ? "信令服务器" : "零服务器")
+    : "握手中";
   byId("sigTag").className = "tag" + (live ? " live" : "");
 
   byId("liveRole").textContent = S.role === "host" ? "被控端（发起方）" : "控制端（加入方）";
@@ -1456,9 +1505,223 @@ function failSig(e) {
 }
 
 /* ============================================================
+   3.1 服务器模式信令（需要 http/https，页面由信令服务器托管时可用）
+   ============================================================ */
+const CAN_SERVER = location.protocol === "http:" || location.protocol === "https:";
+const SRV = { ws: null, code: "", pendingIce: [] };
+
+function wsUrl() {
+  return (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/ws";
+}
+
+function srvOpen() {
+  return new Promise((resolve, reject) => {
+    if (SRV.ws && SRV.ws.readyState === WebSocket.OPEN) { resolve(SRV.ws); return; }
+    let ws;
+    try { ws = new WebSocket(wsUrl()); } catch (e) { reject(new Error("无法创建信令连接")); return; }
+    SRV.ws = ws;
+    const timer = setTimeout(() => {
+      try { ws.close(); } catch (e) {}
+      reject(new Error("连接信令服务器超时"));
+    }, 8000);
+    ws.onopen = () => { clearTimeout(timer); log("信令服务器已连接", "ok"); resolve(ws); };
+    ws.onerror = () => { clearTimeout(timer); reject(new Error("无法连接信令服务器")); };
+    ws.onclose = () => {
+      clearTimeout(timer);
+      if (SRV.ws === ws) SRV.ws = null;
+      if (S.phase === "srv-room" || S.phase === "srv-connecting") {
+        log("信令连接已断开", "warn");
+      }
+    };
+    ws.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      onSignal(msg);
+    };
+  });
+}
+
+function srvSend(obj) {
+  if (SRV.ws && SRV.ws.readyState === WebSocket.OPEN) {
+    try { SRV.ws.send(JSON.stringify(obj)); } catch (e) { /* ignore */ }
+  }
+}
+
+function onSignal(msg) {
+  switch (msg.type) {
+    case "room":
+      SRV.code = msg.code;
+      byId("roomCode").textContent = msg.code;
+      byId("roomLink").value = location.origin + location.pathname + "?room=" + msg.code;
+      setPhase("srv-room");
+      setPill("等待对方加入…", "busy");
+      log("房间已创建：" + msg.code, "ok");
+      render();
+      break;
+
+    case "joined":
+      SRV.code = msg.code;
+      setPhase("srv-connecting");
+      setPill("正在协商…", "busy");
+      log("已加入房间 " + msg.code + "，等待对方发起");
+      render();
+      break;
+
+    case "peer":
+      log("对方已加入，开始协商");
+      hostOfferViaServer();
+      break;
+
+    case "offer":
+      guestAnswerViaServer(msg.sdp);
+      break;
+
+    case "answer":
+      hostAcceptViaServer(msg.sdp);
+      break;
+
+    case "ice":
+      addRemoteIce(msg.candidate);
+      break;
+
+    case "peer-left":
+      toast("对方已离开房间");
+      log("对方已离开", "warn");
+      closePeer(true);
+      setPhase("idle");
+      setPill("未连接", "");
+      break;
+
+    case "error":
+      toast(msg.message || "信令错误", "err");
+      log("信令错误：" + (msg.message || ""), "err");
+      resetServer();
+      break;
+  }
+}
+
+async function hostOfferViaServer() {
+  try {
+    closePeer(true);
+    const pc = buildPeer("host", true);
+    setPhase("srv-connecting");
+    setPill("正在协商…", "busy");
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    srvSend({ type: "offer", sdp: pc.localDescription.sdp });
+  } catch (e) {
+    failSig(e);
+  }
+}
+
+async function guestAnswerViaServer(sdp) {
+  try {
+    closePeer(true);
+    const pc = buildPeer("guest", true);
+    setPhase("srv-connecting");
+    setPill("正在协商…", "busy");
+    await pc.setRemoteDescription({ type: "offer", sdp });
+    S.candRemote = candidateStats(sdp);
+    S.videoTx = sortedVideoTransceivers();
+    S.videoTx.forEach((tx, i) => {
+      if (tx.direction === "recvonly") tx.direction = "sendrecv";
+      pinCodec(tx, CODEC_SLOTS[i]);
+    });
+    attachLocalAll();
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    srvSend({ type: "answer", sdp: pc.localDescription.sdp });
+    flushRemoteIce();
+  } catch (e) {
+    failSig(e);
+  }
+}
+
+async function hostAcceptViaServer(sdp) {
+  try {
+    if (!S.pc) throw new Error("连接已失效");
+    await S.pc.setRemoteDescription({ type: "answer", sdp });
+    S.candRemote = candidateStats(sdp);
+    flushRemoteIce();
+  } catch (e) {
+    failSig(e);
+  }
+}
+
+function addRemoteIce(candidate) {
+  if (!candidate) return;
+  if (!S.pc || !S.pc.remoteDescription) { SRV.pendingIce.push(candidate); return; }
+  S.pc.addIceCandidate(candidate).catch(() => {});
+}
+
+function flushRemoteIce() {
+  const list = SRV.pendingIce.splice(0);
+  for (const c of list) {
+    if (S.pc) S.pc.addIceCandidate(c).catch(() => {});
+  }
+}
+
+async function createRoom() {
+  const btn = byId("btnCreateRoom");
+  btn.disabled = true;
+  try {
+    await srvOpen();
+    srvSend({ type: "create" });
+  } catch (e) {
+    toast(e.message, "err");
+    log(e.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function joinRoom() {
+  const input = byId("joinCode");
+  const code = (input.value || "").trim().toUpperCase();
+  if (code.length !== 6) {
+    toast("请输入 6 位房间号");
+    input.focus();
+    return;
+  }
+  try {
+    setPill("加入房间…", "busy");
+    await srvOpen();
+    srvSend({ type: "join", code });
+  } catch (e) {
+    toast(e.message, "err");
+    log(e.message, "err");
+    setPill("未连接", "");
+  }
+}
+
+function resetServer() {
+  SRV.pendingIce = [];
+  SRV.code = "";
+  if (SRV.ws) {
+    try { SRV.ws.close(); } catch (e) { /* ignore */ }
+    SRV.ws = null;
+  }
+  closePeer(true);
+  setPhase("idle");
+  setPill("未连接", "");
+  render();
+}
+
+function setMode(mode) {
+  if (mode === "server" && !CAN_SERVER) mode = "manual";
+  S.mode = mode;
+  for (const b of byId("modeSeg").children) {
+    b.classList.toggle("on", b.dataset.mode === mode);
+  }
+  byId("srvBox").classList.toggle("hidden", mode !== "server");
+  byId("manualBox").classList.toggle("hidden", mode === "server");
+  render();
+}
+
+/* ============================================================
    4. WebRTC 对等体
    ============================================================ */
-function buildPeer(role) {
+function buildPeer(role, trickle) {
   const pc = new RTCPeerConnection({
     iceServers: iceServers(),
     bundlePolicy: "max-bundle",
@@ -1543,6 +1806,19 @@ function buildPeer(role) {
       log("STUN 服务器不可用（" + ev.url + "），已跳过", "warn");
     }
   };
+
+  if (trickle) {
+    // 服务器模式：边收集边发送候选
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate) srvSend({ type: "ice", candidate: ev.candidate.toJSON() });
+    };
+    pc.onicegatheringstatechange = () => {
+      if (pc.iceGatheringState !== "complete") return;
+      S.candLocal = candidateStats(pc.localDescription && pc.localDescription.sdp);
+      if (pc.remoteDescription) S.candRemote = candidateStats(pc.remoteDescription.sdp);
+      render();
+    };
+  }
 
   return pc;
 }
@@ -2235,13 +2511,28 @@ async function bridgeClipboardSet(text) {
 }
 
 async function writeLocalClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text);
+  const done = () => {
     toast(`已同步对方剪贴板 · ${text.length} 字符`, "ok", 1800);
     log(`剪贴板已同步（${text.length} 字符）`, "ok");
+  };
+  try {
+    await navigator.clipboard.writeText(text);
+    done();
+    return;
   } catch (e) {
-    toast("写入本机剪贴板失败：浏览器权限不足", "err", 2600);
+    /* file:// 或未聚焦时 clipboard API 会被拒，退回旧接口 */
   }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    if (ok) { done(); return; }
+  } catch (e) { /* ignore */ }
+  toast("写入本机剪贴板失败：请点一下页面后重试", "err", 3000);
 }
 
 /** Ctrl+V：先把本机剪贴板推给对端，再发按键，避免对端粘贴到旧内容 */
@@ -2376,6 +2667,17 @@ async function bridgePing(opts) {
    9. 事件绑定
    ============================================================ */
 function bindUI() {
+  byId("modeSeg").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-mode]");
+    if (!btn || btn.disabled) return;
+    setMode(btn.dataset.mode);
+  });
+  byId("btnCreateRoom").addEventListener("click", createRoom);
+  byId("btnJoinRoom").addEventListener("click", joinRoom);
+  byId("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoom(); });
+  byId("btnLeaveRoom").addEventListener("click", () => { srvSend({ type: "bye" }); resetServer(); });
+  byId("btnCopyLink").addEventListener("click", (e) => copyText(byId("roomLink").value, e.currentTarget));
+
   byId("btnHost").addEventListener("click", hostStart);
   byId("btnGuest").addEventListener("click", () => {
     byId("sigErr").textContent = "";
@@ -2400,6 +2702,12 @@ function bindUI() {
   byId("btnMakeAnswer").addEventListener("click", guestMakeAnswer);
 
   byId("btnDisconnect").addEventListener("click", () => {
+    if (SRV.ws) {
+      srvSend({ type: "bye" });
+      resetServer();
+      toast("已断开");
+      return;
+    }
     closePeer(false);
     setPhase("idle");
     setPill("未连接", "");
@@ -2467,6 +2775,9 @@ function bindUI() {
   // 舞台交互
   dom.stage.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0 && ev.button !== 2 && ev.button !== 1) return;
+    // 工具栏在画面之上，点它是要操作本页面，不能当成“控制远端”的点击吃掉
+    if (ev.target.closest(".stage-tools")) { S.input.downOnStage = false; return; }
+    S.input.downOnStage = true;
     if (S.phase !== "live") return;
     if (!S.wantControl) {
       if (remoteVisible()) toast("先在左侧开启「我可以控制对方」");
@@ -2503,6 +2814,7 @@ function bindUI() {
   dom.stage.addEventListener("contextmenu", (e) => e.preventDefault());
 
   dom.stage.addEventListener("wheel", (ev) => {
+    if (ev.target.closest(".stage-tools")) return;
     if (!canSendInput()) return;
     if (!remoteVisible()) return;
     ev.preventDefault();
@@ -2580,7 +2892,10 @@ function bindUI() {
     window.open(BRIDGE_EXE_URL, "_blank", "noopener");
   });
 
-  window.addEventListener("beforeunload", () => { closePeer(false); });
+  window.addEventListener("beforeunload", () => {
+    srvSend({ type: "bye" });
+    closePeer(false);
+  });
 }
 
 /* ============================================================
@@ -3326,6 +3641,12 @@ stun:10.144.1.1:3478
    11. 启动
    ============================================================ */
 function boot() {
+  byId("modeSeg").querySelectorAll("button[data-mode]").forEach((b) => {
+    if (b.dataset.mode === "server" && !CAN_SERVER) {
+      b.disabled = true;
+      b.title = "需要通过 http(s) 访问才能使用信令服务器";
+    }
+  });
   byId("bridgeScript").textContent = BRIDGE_SCRIPT;
   byId("stunScript").textContent = STUN_SCRIPT;
   byId("etSteps").textContent = ET_STEPS;
@@ -3334,6 +3655,14 @@ function boot() {
   render();
   setPill("未连接", "");
   log("MyDesk 已就绪：单文件、零服务器、纯 P2P");
+
+  // 默认模式：由服务器托管时用「服务器」，本地文件用「手动」
+  setMode(CAN_SERVER ? "server" : "manual");
+  const roomParam = CAN_SERVER ? new URL(location.href).searchParams.get("room") : null;
+  if (roomParam) {
+    byId("joinCode").value = String(roomParam).toUpperCase().slice(0, 6);
+    setTimeout(() => joinRoom(), 400);
+  }
   if (!window.isSecureContext) {
     log("当前不是安全上下文，屏幕共享可能被浏览器拦截", "warn");
   }
