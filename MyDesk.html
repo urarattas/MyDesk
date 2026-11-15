@@ -2511,13 +2511,28 @@ async function bridgeClipboardSet(text) {
 }
 
 async function writeLocalClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text);
+  const done = () => {
     toast(`已同步对方剪贴板 · ${text.length} 字符`, "ok", 1800);
     log(`剪贴板已同步（${text.length} 字符）`, "ok");
+  };
+  try {
+    await navigator.clipboard.writeText(text);
+    done();
+    return;
   } catch (e) {
-    toast("写入本机剪贴板失败：浏览器权限不足", "err", 2600);
+    /* file:// 或未聚焦时 clipboard API 会被拒，退回旧接口 */
   }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    if (ok) { done(); return; }
+  } catch (e) { /* ignore */ }
+  toast("写入本机剪贴板失败：请点一下页面后重试", "err", 3000);
 }
 
 /** Ctrl+V：先把本机剪贴板推给对端，再发按键，避免对端粘贴到旧内容 */
