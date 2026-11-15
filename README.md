@@ -95,6 +95,8 @@ the tunnel answers but `/ws` fails, the proxy is not forwarding the upgrade.
 | `HOST` | `0.0.0.0` | Bind address |
 | `ROOM_TTL_MS` | `1800000` | How long an unjoined room lives (30 min) |
 | `ALLOW_ANY_ORIGIN` | `0` | Set to `1` to skip the WebSocket `Origin` check (only behind a proxy that rewrites `Host`) |
+| `STRICT_ORIGIN` | `0` | Set to `1` to reject an `Origin`/`Host` mismatch instead of logging it |
+| `MYDESK_HTML` | `/app/MyDesk.html` | Path of the page to serve. Re-read when its mtime changes, so a bind mount updates the app without a rebuild |
 
 ## HTTP surface
 
@@ -103,6 +105,22 @@ the tunnel answers but `/ws` fails, the proxy is not forwarding the upgrade.
 | `GET /` | The app (`MyDesk.html`) |
 | `GET /healthz` | `{"ok":true,"rooms":N}` — used by the Docker healthcheck |
 | `WS /ws` | Signaling socket |
+
+## Releases
+
+Two rolling GitHub releases are published by CI, both fed from the default branch:
+
+| Tag | Contents | Updated by |
+| --- | --- | --- |
+| `html` | `MyDesk.html` + `.sha256` — the standalone app | `.github/workflows/html.yml` on every push that touches `MyDesk.html` |
+| `bridge-latest` | `MyDeskBridge.exe` + `.sha256` | `.github/workflows/bridge.yml` |
+
+`html` is deliberately **not** marked as the "latest" release, so
+`releases/latest/download/MyDeskBridge.exe` keeps resolving to the bridge build.
+
+Download the standalone file from
+`https://github.com/urarattas/MyDesk/releases/download/html/MyDesk.html`, or straight
+from a running server at `/MyDesk.html`.
 
 ## Signaling protocol
 

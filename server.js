@@ -32,18 +32,33 @@ const HOST = process.env.HOST || "0.0.0.0";
 const ROOM_TTL_MS = Number(process.env.ROOM_TTL_MS || 30 * 60 * 1000);
 const ALLOW_ANY_ORIGIN = process.env.ALLOW_ANY_ORIGIN === "1";
 const STRICT_ORIGIN = process.env.STRICT_ORIGIN === "1";
-const APP_FILE = path.join(__dirname, "MyDesk.html");
+const APP_FILE = process.env.MYDESK_HTML || path.join(__dirname, "MyDesk.html");
 const MAX_FRAME = 256 * 1024;
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
 
-let appHtml;
-try {
-  appHtml = fs.readFileSync(APP_FILE);
-} catch (err) {
-  console.error(`[fatal] cannot read ${APP_FILE}: ${err.message}`);
-  process.exit(1);
+let appHtml = null;
+let appMtime = 0;
+
+/**
+ * 每次请求按 mtime 判断要不要重读：把 HTML 以卷挂载进来后，改完文件立刻生效，
+ * 既不用重建镜像也不用重启容器。
+ */
+function loadApp() {
+  try {
+    const st = fs.statSync(APP_FILE);
+    if (!appHtml || st.mtimeMs !== appMtime) {
+      appHtml = fs.readFileSync(APP_FILE);
+      appMtime = st.mtimeMs;
+      console.log(`[app] serving ${APP_FILE} (${appHtml.length} bytes)`);
+    }
+    return appHtml;
+  } catch (err) {
+    return null;
+  }
 }
+
+loadApp();
 
 /* ------------------------------------------------------------------ */
 /* Rooms                                                               */
@@ -355,15 +370,21 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (url.pathname === "/" || url.pathname === "/index.html") {
+  if (url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/MyDesk.html") {
+    const html = loadApp();
+    if (!html) {
+      res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end(`Cannot read ${APP_FILE}. If this is a bind mount, check that the path is a file, not a directory.\n`);
+      return;
+    }
     res.writeHead(200, {
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Length": appHtml.length,
+      "Content-Length": html.length,
       "Cache-Control": "no-cache",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer"
     });
-    res.end(req.method === "HEAD" ? undefined : appHtml);
+    res.end(req.method === "HEAD" ? undefined : html);
     return;
   }
 
@@ -450,6 +471,7 @@ setInterval(() => {
 
 server.listen(PORT, HOST, () => {
   console.log(`MyDesk signaling server listening on http://${HOST}:${PORT}`);
+  if (!appHtml) console.warn(`[app] ${APP_FILE} is not readable yet; requests answer 503`);
 });
 
 function shutdown(signal) {
