@@ -14,7 +14,7 @@ encrypted with DTLS-SRTP.
 
 | Mode | When | How |
 | --- | --- | --- |
-| **Server** | The page is served over `http(s)` | Create a room → share the 6-character code or the link. |
+| **Server** | The page is served over `http(s)` | Create a room → share the 6-character code or the link → the host approves the joiner before anything is sent. |
 | **Manual** | `file://` or no server | Exchange one handshake string both ways. Works with zero infrastructure. |
 
 Both modes use exactly the same media/control stack; the mode selector in the UI
@@ -96,6 +96,12 @@ the tunnel answers but `/ws` fails, the proxy is not forwarding the upgrade.
 | `ROOM_TTL_MS` | `1800000` | How long an unjoined room lives (30 min) |
 | `ALLOW_ANY_ORIGIN` | `0` | Set to `1` to skip the WebSocket `Origin` check (only behind a proxy that rewrites `Host`) |
 | `STRICT_ORIGIN` | `0` | Set to `1` to reject an `Origin`/`Host` mismatch instead of logging it |
+| `MAX_CONNS` | `512` | Concurrent WebSocket connections before new upgrades get `503` (`0` = unlimited) |
+| `MAX_ROOMS` | `256` | Rooms that may exist at once; beyond it `create` answers an error (`0` = unlimited) |
+| `JOIN_RATE` | `40` | Machine-wide ceiling on `join` attempts per second. This is what keeps the 6-character code space from being enumerable (`0` = unlimited) |
+| `JOIN_FAIL_BURST` | `12` | Failed `join` attempts allowed per connection per minute before it is put in a 5-minute cooldown |
+| `EXIT_ON_UNCAUGHT` | `0` | Set to `1` to shut down on an uncaught exception instead of logging and carrying on |
+| `TRUSTED_ORIGINS` | *(empty)* | Extra comma-separated origins to accept, e.g. `http://tauri.localhost`. The native desktop client runs inside WebView2, so its page origin is `tauri.localhost` — needed when `STRICT_ORIGIN=1` |
 | `MYDESK_HTML` | `/app/MyDesk.html` | Path of the page to serve. Re-read when its mtime changes, so a bind mount updates the app without a rebuild |
 
 ## HTTP surface
@@ -138,19 +144,77 @@ A room holds exactly two peers. The first one creates it and becomes the host
 (offerer); the second joins and answers. Rooms are deleted as soon as one side
 disconnects, and garbage-collected if nobody ever joins.
 
+The host does not offer automatically: on `{"type":"peer"}` the page asks the
+person in front of it to approve, and only then sends `offer`. Denying (or 45
+seconds of silence) sends `bye` and closes the room. `join` is rate limited as
+described above, so a rejected attempt is not a free retry.
+
 ## Security notes
 
-- The room code is the only secret: anyone who has it can join a waiting room.
-  Codes are 6 characters from a 32-symbol alphabet (`~1e9` combinations) and are
-  randomly generated per room, never reused while the process lives.
-- The server sees SDP and ICE candidates (which contain IP addresses) but never
-  media, input or clipboard content.
+**What protects a session**
+
+- The room code plus a confirmation click on the host. A 6-character code from a
+  32-symbol alphabet is only `32^6 ≈ 1.07e9` possibilities, so it is treated as a
+  *hint*, not a secret: the host now has to approve the joiner before any offer is
+  sent (`#peerAsk` in the page). Nothing is shared with a stranger who merely
+  guesses the code.
+- `join` is throttled twice — per connection (`JOIN_FAIL_BURST` failures/minute,
+  then a 5-minute cooldown) and machine-wide (`JOIN_RATE` attempts/second). Without
+  that, a single socket can try ~10k codes per second and land in somebody's
+  waiting room within minutes.
+- Cross-site pages are refused at the upgrade: browsers always send
+  `Sec-Fetch-Site`, and anything other than `same-origin`/`none` gets `403`. This
+  is proxy-rewrite-proof, unlike the `Origin`/`Host` comparison, which still only
+  warns unless `STRICT_ORIGIN=1`.
+- The served page carries `X-Frame-Options: DENY` and
+  `Content-Security-Policy: frame-ancestors 'none'` so a remote-control UI cannot
+  be clickjacked inside someone else's iframe.
+- Room links use `#room=…` instead of `?room=…`: a fragment is never sent to the
+  server, never lands in a reverse-proxy access log and never leaks via `Referer`.
+
+**What the server sees**
+
+- SDP and ICE candidates (which contain IP addresses), never media, input or
+  clipboard content.
+- Malformed request targets get `400` instead of throwing; oversized or
+  never-terminated WebSocket fragments are cut off at 512 KiB with close code
+  `1009`. Both used to be one-packet ways to kill the process.
+
+**Deployment**
+
 - Put it behind TLS in any real deployment; `ws://` signaling is readable on the
   path.
-- WebSocket upgrades are rejected when the `Origin` header does not match `Host`
-  (disable with `ALLOW_ANY_ORIGIN=1` if a proxy rewrites the host header).
+- There is still no authentication in front of `/`. If you expose it to the
+  internet, put an authenticating proxy or a VPN in front — otherwise every
+  visitor gets a working room service and a share of your `JOIN_RATE` budget.
 - The process runs as the unprivileged `node` user in the image and exposes one
   port. It holds no state on disk.
+- `uncaughtException` is logged and the process keeps serving (rooms live only in
+  memory, so exiting would drop every session). Set `EXIT_ON_UNCAUGHT=1` if you
+  prefer a supervisor to restart it instead.
+
+## Native desktop client (Rust)
+
+`desktop/` is a **Tauri 2** desktop app that runs this very page inside WebView2, so
+the signaling protocol and the whole WebRTC stack are identical and either end can
+be a browser. Rust only adds what a webview cannot do — native input injection and
+a native screen-capture fallback — which removes `bridge.py` entirely:
+
+```text
+web:       peer input -> DataChannel -> browser -> HTTP POST 127.0.0.1:8765 -> bridge.py -> OS
+desktop:   peer input -> DataChannel -> WebView2 -> Tauri command           -> enigo    -> OS
+```
+
+```bash
+cd desktop && cargo build --release
+./target/release/mydesk
+```
+
+Server address, mode (server/manual) and the remote-control permission live in
+`config.toml` (see [desktop/config.example.toml](desktop/config.example.toml)).
+Measured on a 2560×1440 screen: native capture ~45 ms/frame, JPEG ~17 ms,
+end-to-end video ~16 fps, and injected input lands on the exact predicted pixel.
+Details and known gaps: [desktop/README.md](desktop/README.md).
 
 ## Optional input bridge
 
@@ -160,7 +224,9 @@ from the **系统级操控** panel:
 - `bridge/bridge.py` — `pip install pynput` and run it.
 - `MyDeskBridge.exe` — packaged with PyInstaller, no Python needed. Download it
   from the [releases page](https://github.com/urarattas/MyDesk/releases); CI builds
-  and smoke-tests it on `windows-latest` for every change under `bridge/`.
+  and smoke-tests it on `windows-latest` for every change under `bridge/`. The
+  binary is unsigned, so verify the `.sha256` published next to it
+  (`certutil -hashfile MyDeskBridge.exe SHA256`) before running it.
 
 Releases come from CI: every push to `server` refreshes the rolling
 `bridge-latest` release, and a `bridge-v*` tag produces a versioned one. Both ship
@@ -168,7 +234,12 @@ Releases come from CI: every push to `server` refreshes the rolling
 `https://github.com/urarattas/MyDesk/releases/latest/download/MyDeskBridge.exe`
 always resolves once the workflow has run.
 
-Both listen on `127.0.0.1:8765` only. See [bridge/README.md](bridge/README.md).
+Both listen on `127.0.0.1:8765` only, and both **require a pairing token**: the
+process prints one at startup, and you paste it into **系统级操控 → 配对令牌**.
+Binding loopback is not enough on its own — the browser runs on the same machine,
+so any web page you visit can reach `127.0.0.1`. Without the token a request gets
+`401`; with a `Host` that is not loopback (DNS rebinding) it gets `403`. See
+[bridge/README.md](bridge/README.md).
 
 Control is engaged by clicking the video: **Esc releases it, clicking again resumes**.
 While engaged the page requests a [keyboard lock](https://developer.chrome.com/docs/web-platform/keyboard-lock),

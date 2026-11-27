@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["crates/mydesk-core", "crates/mydesk-desktop"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+
+# 开发时也给依赖开优化：图像/JPEG 这类代码在 opt-level 0 下会慢几十倍
+[profile.dev.package."*"]
+opt-level = 2
+
+# 发布用 profile：屏幕编码是 CPU 热点，默认也要开优化
+[profile.release]
+lto = "thin"
+codegen-units = 1

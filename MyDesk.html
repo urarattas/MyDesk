@@ -462,6 +462,13 @@ details .dbody>*:first-child{margin-top:12px}
               <button class="btn sm" id="btnCopyLink">复制链接</button>
               <button class="btn sm ghost" id="btnLeaveRoom">取消</button>
             </div>
+            <div class="perm" id="peerAsk" hidden>
+              <p>有人用这个房间号加入了。<b>确认是你认识的人再允许</b> —— 允许后对方会直接看到你已经共享的画面。</p>
+              <div class="btn-row">
+                <button class="btn sm primary" id="btnPeerAllow">允许连接</button>
+                <button class="btn sm" id="btnPeerDeny">拒绝</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -629,6 +636,13 @@ details .dbody>*:first-child{margin-top:12px}
           <input type="text" id="bridgeUrl" value="http://127.0.0.1:8765" spellcheck="false">
           <button class="btn sm" id="btnBridgeConnect">检测</button>
         </div>
+        <div class="row" style="margin-top:8px">
+          <input type="text" id="bridgeToken" spellcheck="false" autocomplete="off" placeholder="配对令牌">
+        </div>
+        <p class="hint" style="margin-top:6px">
+          桥接<b>要求配对令牌</b>：bridge.py / MyDeskBridge.exe 启动时会在控制台打印
+          <code>配对令牌: …</code>，粘贴到这里再点「检测」。没有令牌时任何网页都无法驱动它。
+        </p>
         <div class="kv"><span>桥接状态</span><b id="bridgeStatus">未启用</b></div>
         <pre class="code" id="bridgeScript"></pre>
         <div class="btn-row">
@@ -637,7 +651,9 @@ details .dbody>*:first-child{margin-top:12px}
           <button class="btn sm" id="btnDownloadExe">下载 bridge.exe</button>
         </div>
         <p class="hint">脚本依赖 <b>Python 3</b> + <b>pynput</b>（<code>pip install pynput</code>）；打包版
-          <b>MyDeskBridge.exe</b> 不需要装 Python，双击即用。两者都只绑定 127.0.0.1，不对外暴露。</p>
+          <b>MyDeskBridge.exe</b> 不需要装 Python，双击即用。两者都只绑定 127.0.0.1，且都需要上面的配对令牌。
+          打包版未签名，下载后请对照 Release 页里的 <code>.sha256</code> 校验：<br>
+          <code>certutil -hashfile MyDeskBridge.exe SHA256</code></p>
       </div>
     </details>
 
@@ -763,6 +779,8 @@ details .dbody>*:first-child{margin-top:12px}
    0. 常量 & 工具
    ============================================================ */
 const CODE_PREFIX = "RD1";
+const CODE_MAX_IN = 96 * 1024;          // 握手码 base64 长度上限
+const CODE_MAX_OUT = 4 * 1024 * 1024;   // 解压输出上限
 const MAX_LOG = 160;
 // 国内可用的公共 STUN（实测可达，按延迟排序），最后附一个海外兜底
 // 每条 m-line 固定绑定一种编码；切换 = 把轨道挪到另一条收发器，不需要重新协商
@@ -834,7 +852,24 @@ async function deflateRaw(bytes) {
 async function inflateRaw(bytes) {
   const ds = new DecompressionStream("deflate-raw");
   const stream = new Blob([bytes]).stream().pipeThrough(ds);
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  // 解压比约 1000:1，没有上限的话一段几 MB 的“邀请码”能撑到几 GB。
+  const reader = stream.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > CODE_MAX_OUT) {
+      try { await reader.cancel(); } catch (e) {}
+      throw new Error("握手码解压后过大，已中止（可能是构造出来的）");
+    }
+    chunks.push(value);
+  }
+  const buf = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) { buf.set(c, at); at += c.length; }
+  return buf;
 }
 
 /** 把 SDP 压成便于复制的一行握手码 */
@@ -852,6 +887,7 @@ async function unpackCode(text) {
   if (!clean.startsWith(CODE_PREFIX)) throw new Error("不是有效的 MyDesk 握手码（应以 RD1 开头）");
   const flag = clean[CODE_PREFIX.length];
   const body = clean.slice(CODE_PREFIX.length + 1);
+  if (body.length > CODE_MAX_IN) throw new Error("握手码过长，已拒绝（正常不会超过几十 KB）");
   const bytes = b64uToBytes(body);
   let raw;
   if (flag === "z") raw = await inflateRaw(bytes);
@@ -927,7 +963,7 @@ const S = {
   allowControl: false,
   wantControl: false,
   remoteAllows: false,
-  bridge: { ok: false, url: "http://127.0.0.1:8765", queue: [], inflight: false, checkedAt: 0 },
+  bridge: { ok: false, url: "http://127.0.0.1:8765", token: "", queue: [], inflight: false, checkedAt: 0 },
   remoteBridge: null,
   warnedDc: false,
   stats: { timer: 0, pingTimer: 0, lastIn: 0, lastOut: 0, lastTs: 0, lastInFrames: 0, lastOutFrames: 0, ping: null, pingId: 0, pingSent: new Map() },
@@ -935,6 +971,8 @@ const S = {
   input: { held: new Set(), active: false, keyLock: false, raf: 0, pending: null, wheel: 0, wheelTimer: 0, downOnStage: false },
   hideCursor: true,
   clipSync: true,
+  clipPending: 0,          // 已发出、尚未收到回复的 clip-req 数量
+  peerAsking: false,       // 房间里有陌生人等待我确认
   remoteSharing: null,
   replacingStream: false,
   candLocal: null,
@@ -989,7 +1027,8 @@ function render() {
   byId("guestStep2").classList.toggle("hidden", p !== "guest-answer");
   byId("srvLobby").classList.toggle("hidden", roomPhase);
   byId("srvRoom").classList.toggle("hidden", !roomPhase);
-  byId("srvStatus").textContent = p === "srv-connecting" ? "对方已加入，正在协商…" : "等待对方加入…";
+  byId("srvStatus").textContent = p === "srv-connecting" ? "对方已加入，正在协商…"
+    : S.peerAsking ? "有人在请求连接，请确认是否允许" : "等待对方加入…";
 
   const busy = !!(S.pc && (live || p === "connecting" || p === "host-offer" || p === "guest-answer"))
     || !!SRV.ws || roomPhase;
@@ -1065,6 +1104,7 @@ function setPhase(p) {
    3. 信令（纯手动，无服务器）
    ============================================================ */
 const ICE_KEY = "mydesk.ice.v1";
+const TURN_PASS_KEY = "mydesk.turnpass.v1";   // 只放 sessionStorage，不落盘
 
 function parseIceUrls() {
   return (byId("iceList").value || "")
@@ -1091,12 +1131,27 @@ function loadIceConfig() {
     if (saved && typeof saved.list === "string" && saved.list.trim()) {
       byId("iceList").value = saved.list;
       byId("turnUser").value = saved.user || "";
-      byId("turnPass").value = saved.pass || "";
     }
+    // TURN 密码是长期凭据：只留在本标签页的 sessionStorage；老版本写进过
+    // localStorage，这里顺手把它清掉。
+    if (saved && saved.pass) {
+      try {
+        localStorage.setItem(ICE_KEY, JSON.stringify({
+          list: byId("iceList").value,
+          user: byId("turnUser").value
+        }));
+      } catch (e) {}
+    }
+    byId("turnPass").value = sessionStorage.getItem(TURN_PASS_KEY) || "";
     const clip = localStorage.getItem("mydesk.clip.v1");
     if (clip !== null) {
       S.clipSync = clip === "1";
       byId("swClip").checked = S.clipSync;
+    }
+    const bridgeToken = localStorage.getItem("mydesk.bridgetoken.v1");
+    if (bridgeToken) {
+      S.bridge.token = bridgeToken;
+      byId("bridgeToken").value = bridgeToken;
     }
     const hide = localStorage.getItem("mydesk.hideCursor.v1");
     if (hide !== null) {
@@ -1117,9 +1172,9 @@ function saveIceConfig() {
   try {
     localStorage.setItem(ICE_KEY, JSON.stringify({
       list: byId("iceList").value,
-      user: byId("turnUser").value,
-      pass: byId("turnPass").value
+      user: byId("turnUser").value
     }));
+    sessionStorage.setItem(TURN_PASS_KEY, byId("turnPass").value);
   } catch (e) {}
 }
 
@@ -1402,8 +1457,9 @@ function closePeer(silent) {
   S.remoteBridge = null;
   S.warnedDc = false;
   byId("swControl").checked = false;
-  byId("swAllow").checked = false;
-  S.allowControl = false;
+  // 注意：不要在这里清 S.allowControl / swAllow。
+  // 「允许对方控制我」是本机对外的长期授权（配置文件里也持久化），
+  // 每次重建连接就悄悄清掉，会让用户在毫无提示的情况下失去授权。
   dom.remote.srcObject = null;
   byId("btnSound").disabled = true;
   byId("btnSound").title = "对方没有共享音频";
@@ -1552,7 +1608,8 @@ function onSignal(msg) {
     case "room":
       SRV.code = msg.code;
       byId("roomCode").textContent = msg.code;
-      byId("roomLink").value = location.origin + location.pathname + "?room=" + msg.code;
+      // 放 fragment 而不是 query：fragment 不会发给服务器、不进反代访问日志、也不随 Referer 外泄
+      byId("roomLink").value = location.origin + location.pathname + "#room=" + msg.code;
       setPhase("srv-room");
       setPill("等待对方加入…", "busy");
       log("房间已创建：" + msg.code, "ok");
@@ -1568,8 +1625,8 @@ function onSignal(msg) {
       break;
 
     case "peer":
-      log("对方已加入，开始协商");
-      hostOfferViaServer();
+      // 不再自动开始协商：房间号只是 6 位码，自动接受等于「猜到码就能看到屏幕」。
+      askPeerApprove();
       break;
 
     case "offer":
@@ -1598,6 +1655,48 @@ function onSignal(msg) {
       resetServer();
       break;
   }
+}
+
+/**
+ * 有人加入房间：先让主机点一次「允许」再发 offer。房间号只有 32^6 种，
+ * 没有这一步的话，猜到/撞到码的人可以在主机完全无感的情况下拿到画面。
+ */
+function askPeerApprove() {
+  if (S.peerAsking) return;
+  S.peerAsking = true;
+  byId("peerAsk").hidden = false;
+  setPill("有人在请求连接…", "busy");
+  log("有人加入了房间，等你确认是否允许连接", "warn");
+  toast("有人加入了房间，确认后才开始协商", "", 4500);
+  render();
+  clearTimeout(SRV.askTimer);
+  SRV.askTimer = setTimeout(() => {
+    if (!S.peerAsking) return;
+    log("45 秒内没有确认，已取消这次连接", "warn");
+    denyPeerApprove("超过 45 秒未确认，已取消这次连接");
+  }, 45000);
+}
+
+function clearPeerAsk() {
+  S.peerAsking = false;
+  clearTimeout(SRV.askTimer);
+  SRV.askTimer = 0;
+  byId("peerAsk").hidden = true;
+}
+
+function allowPeerApprove() {
+  if (!S.peerAsking) return;
+  clearPeerAsk();
+  log("已允许对方连接，开始协商");
+  hostOfferViaServer();
+}
+
+function denyPeerApprove(reason) {
+  clearPeerAsk();
+  try { srvSend({ type: "bye" }); } catch (e) { /* ignore */ }
+  log(reason || "已拒绝这次连接", "warn");
+  toast(reason || "已拒绝这次连接");
+  resetServer();
 }
 
 async function hostOfferViaServer() {
@@ -1695,6 +1794,7 @@ async function joinRoom() {
 }
 
 function resetServer() {
+  clearPeerAsk();
   SRV.pendingIce = [];
   SRV.code = "";
   if (SRV.ws) {
@@ -1907,7 +2007,7 @@ async function onCtlMessage(data) {
       if (!m.allow && S.wantControl) {
         S.wantControl = false;
         byId("swControl").checked = false;
-        releaseKeyboard();
+        deactivateControl(true);          // 连键盘锁一起放掉，别让 Esc 死锁
         toast("对方收回了控制权限，已停止发送键鼠");
       }
       render();
@@ -1918,17 +2018,25 @@ async function onCtlMessage(data) {
       log("收到控制请求", "warn");
       break;
     case "clip-req": {
+      // 读系统剪贴板必须建立在「我已授权对方控制」之上：否则任何连上来的对端
+      // 一条消息就能把剪贴板全文取走（密码、验证码、私钥片段都在里面）。
       if (!S.clipSync) { sendCtl({ t: "clip-fail", error: "对方关闭了剪贴板同步" }); break; }
+      if (!S.allowControl) { sendCtl({ t: "clip-fail", error: "未授权控制，剪贴板不可读" }); break; }
       const text = await bridgeClipboardGet();
       if (text === null) sendCtl({ t: "clip-fail", error: "本机桥接未连接" });
       else sendCtl({ t: "clip-data", text });
       break;
     }
     case "clip-set":
-      if (S.clipSync) await bridgeClipboardSet(String(m.text || ""));
+      // 只有授权过的控制端才能改写本机剪贴板。
+      if (S.clipSync && S.allowControl) await bridgeClipboardSet(String(m.text || ""));
       break;
     case "clip-data":
-      if (S.clipSync) await writeLocalClipboard(String(m.text || ""));
+      // 只接受「我自己请求过」的回复，避免对端随手把本机剪贴板换成它想要的内容。
+      if (S.clipSync && S.clipPending > 0) {
+        S.clipPending -= 1;
+        await writeLocalClipboard(String(m.text || ""));
+      }
       break;
     case "clip-fail":
       if (S.wantControl) toast("对方剪贴板不可用：" + (m.error || ""), "err", 3000);
@@ -2413,15 +2521,17 @@ function isReservedByBrowser(ev) {
 }
 
 function onKeyDown(ev) {
-  if (!S.input.active || !canSendInput()) return;
-  const ae = document.activeElement;
-  if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
-
-  if (ev.code === "Escape") {
+  // Esc 释放必须排在最前面：既不能在对方收回权限后失效（canSendInput 会变 false），
+  // 也不能被输入框焦点挡住，否则键盘锁会卡在「已接管」，只有窗口失焦能救。
+  if (S.input.active && ev.code === "Escape") {
     ev.preventDefault();
+    ev.stopPropagation();
     deactivateControl();
     return;
   }
+  if (!S.input.active || !canSendInput()) return;
+  const ae = document.activeElement;
+  if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
   if (isReservedByBrowser(ev) && !S.input.keyLock) return;
 
   // Ctrl+V：先同步剪贴板再发按键
@@ -2438,7 +2548,10 @@ function onKeyDown(ev) {
   sendInput({ t: "k", d: "down", key: ev.key, code: ev.code, mods: modsOf(ev) });
   // Ctrl+C / Ctrl+X：等对端应用处理完，再把它的剪贴板拉回来
   if (S.clipSync && (ev.ctrlKey || ev.metaKey) && (ev.code === "KeyC" || ev.code === "KeyX")) {
-    setTimeout(() => sendCtl({ t: "clip-req" }), 260);
+    setTimeout(() => {
+      S.clipPending = Math.min((S.clipPending || 0) + 1, 4);
+      sendCtl({ t: "clip-req" });
+    }, 260);
   }
 }
 
@@ -2487,7 +2600,7 @@ function onInputMessage(raw) {
 async function bridgeClipboardGet() {
   if (!S.bridge.ok) return null;
   try {
-    const res = await fetch(S.bridge.url.replace(/\/+$/, "") + "/clipboard", { cache: "no-store" });
+    const res = await fetch(S.bridge.url.replace(/\/+$/, "") + "/clipboard", { cache: "no-store", headers: bridgeHeaders() });
     const info = await res.json();
     return info && info.ok ? String(info.text || "") : null;
   } catch (e) {
@@ -2501,7 +2614,7 @@ async function bridgeClipboardSet(text) {
   try {
     const res = await fetch(S.bridge.url.replace(/\/+$/, "") + "/clipboard", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: bridgeHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ text })
     });
     return res.ok;
@@ -2567,7 +2680,7 @@ async function pumpBridge() {
     const timer = setTimeout(() => ctl.abort(), 2000);
     const res = await fetch(S.bridge.url.replace(/\/+$/, "") + "/input", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: bridgeHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ events }),
       signal: ctl.signal
     });
@@ -2621,9 +2734,23 @@ function reportBridgeState() {
   if (S.pc) sendCtl({ t: "bridge", ok: S.bridge.ok });
 }
 
+/** 桥接现在要求配对令牌，所有请求统一从这里加头（自定义头会触发预检，服务端已放行）。 */
+function bridgeHeaders(extra) {
+  const h = Object.assign({}, extra || {});
+  const token = (S.bridge.token || "").trim();
+  if (token) h["X-MyDesk-Token"] = token;
+  return h;
+}
+
+function bridgeBase() {
+  return byId("bridgeUrl").value.trim().replace(/\/+$/, "") || "http://127.0.0.1:8765";
+}
+
 async function bridgePing(opts) {
   const silent = !!(opts && opts.silent);
-  const url = byId("bridgeUrl").value.trim().replace(/\/+$/, "") || "http://127.0.0.1:8765";
+  const url = bridgeBase();
+  S.bridge.token = byId("bridgeToken").value.trim();
+  try { localStorage.setItem("mydesk.bridgetoken.v1", S.bridge.token); } catch (err) {}
   if (!silent) {
     byId("btnBridgeConnect").disabled = true;
     byId("btnBridgeConnect").textContent = "检测中…";
@@ -2631,8 +2758,16 @@ async function bridgePing(opts) {
   try {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 1800);
-    const res = await fetch(url + "/health", { signal: ctl.signal, cache: "no-store" });
+    const res = await fetch(url + "/health", { signal: ctl.signal, cache: "no-store", headers: bridgeHeaders() });
     clearTimeout(timer);
+    if (res.status === 401 || res.status === 403) {
+      S.bridge.ok = false;
+      setBridgeStatus(false);
+      const why = res.status === 401 ? "配对令牌不正确或未填" : "Host/来源被桥接拒绝";
+      log("本机桥接拒绝了这次连接：" + why, "err");
+      if (!silent) toast(why + "：请填 bridge 启动时打印的配对令牌", "err", 5600);
+      return;
+    }
     const info = await res.json();
     const back = !S.bridge.ok;
     S.bridge.url = url;
@@ -2676,6 +2811,8 @@ function bindUI() {
   byId("btnJoinRoom").addEventListener("click", joinRoom);
   byId("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoom(); });
   byId("btnLeaveRoom").addEventListener("click", () => { srvSend({ type: "bye" }); resetServer(); });
+  byId("btnPeerAllow").addEventListener("click", allowPeerApprove);
+  byId("btnPeerDeny").addEventListener("click", () => denyPeerApprove());
   byId("btnCopyLink").addEventListener("click", (e) => copyText(byId("roomLink").value, e.currentTarget));
 
   byId("btnHost").addEventListener("click", hostStart);
@@ -2753,9 +2890,15 @@ function bindUI() {
     render();
   });
   byId("btnPermDeny").addEventListener("click", () => {
+    // 必须真的撤销本地授权：只发消息会让「已拒绝」变成一句空话，
+    // 而 onInputMessage 仍会因为 S.allowControl 为 true 继续注入键鼠。
+    S.allowControl = false;
+    byId("swAllow").checked = false;
     sendCtl({ t: "perm", allow: false });
     byId("permBanner").hidden = true;
-    toast("已拒绝控制请求");
+    if (S.bridge.ok) bridgeSend({ t: "release" });
+    toast("已拒绝并撤销控制授权");
+    render();
   });
 
   byId("quality").addEventListener("change", () => { applyBitrate(); });
@@ -2885,11 +3028,13 @@ function bindUI() {
   byId("btnCopyScript").addEventListener("click", (e) => copyText(BRIDGE_SCRIPT, e.currentTarget));
   byId("btnDownloadScript").addEventListener("click", () => downloadText(BRIDGE_SCRIPT, "bridge.py", "text/x-python"));
   byId("btnDownloadExe").addEventListener("click", () => {
-    if (!BRIDGE_EXE_URL || BRIDGE_EXE_URL.includes("OWNER/REPO")) {
-      toast("打包版需要仓库地址：把 BRIDGE_EXE_URL 改成你的 Release 链接", "err", 4200);
+    if (!BRIDGE_RELEASE_URL || BRIDGE_RELEASE_URL.includes("OWNER/REPO")) {
+      toast("打包版需要仓库地址：把 BRIDGE_RELEASE_URL 改成你的 Releases 链接", "err", 4200);
       return;
     }
-    window.open(BRIDGE_EXE_URL, "_blank", "noopener");
+    // 直接链到 exe 会让人跳过校验：指向 Release 页，.sha256 就在同一个文件列表里。
+    window.open(BRIDGE_RELEASE_URL, "_blank", "noopener");
+    toast("下载后请对照同页的 .sha256 校验：certutil -hashfile MyDeskBridge.exe SHA256", "", 7000);
   });
 
   window.addEventListener("beforeunload", () => {
@@ -2902,7 +3047,7 @@ function bindUI() {
    10. 本机桥接脚本（可选，用于真正的系统级操控）
    ============================================================ */
 // 打包好的 Windows 程序（由 .github/workflows/bridge.yml 构建并挂到 Release）
-const BRIDGE_EXE_URL = "https://github.com/urarattas/MyDesk/releases/latest/download/MyDeskBridge.exe";
+const BRIDGE_RELEASE_URL = "https://github.com/urarattas/MyDesk/releases/latest";
 
 const BRIDGE_SCRIPT = `#!/usr/bin/env python3
 # MyDesk bridge - 把浏览器收到的键鼠事件注入本机系统
@@ -2911,10 +3056,16 @@ const BRIDGE_SCRIPT = `#!/usr/bin/env python3
 #   pynput   X11 / Windows / macOS —— 走 XTEST / SendInput
 #   ydotool  Linux Wayland —— 走 /dev/uinput，能注入原生 Wayland 窗口
 #
-# 仅监听 127.0.0.1:8765。
+# 仅监听 127.0.0.1:8765。但“只绑定回环”不等于“只有本机可信”：浏览器就在
+# 本机，任何打开的网页都能访问 127.0.0.1。所以除绑定回环外还有三道门：
+#   1. Host 必须是回环地址（挡住 DNS rebinding）；
+#   2. 注入键鼠、读写剪贴板必须带配对令牌（启动时打印，可用 BRIDGE_TOKEN 固定）；
+#   3. CORS 只回显来源，不再用 "*"。
 import glob
+import hmac
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -3359,7 +3510,7 @@ def _win_clipboard_set(text):
 
     CF_UNICODETEXT = 13
     GMEM_MOVEABLE = 0x0002
-    data = text.encode("utf-16-le") + b"\x00\x00"
+    data = text.encode("utf-16-le") + bytes(2)      # 结尾两个 NUL 字节
 
     handle = k.GlobalAlloc(GMEM_MOVEABLE, len(data))
     if not handle:
@@ -3479,8 +3630,40 @@ def apply_events(events):
 
 
 # --------------------------------------------------------------------------
-# HTTP
+# HTTP + 访问控制
 # --------------------------------------------------------------------------
+
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", ""}
+ALLOWED_HOSTS = LOOPBACK_HOSTS | {
+    h.strip().lower() for h in os.environ.get("BRIDGE_HOSTS", "").split(",") if h.strip()
+}
+
+TOKEN = os.environ.get("BRIDGE_TOKEN")
+if TOKEN is None:
+    TOKEN = secrets.token_hex(16)
+TOKEN = TOKEN.strip()
+
+MAX_BODY = 1024 * 1024
+
+
+def _hostname(value):
+    v = (value or "").strip()
+    if v.startswith("["):
+        return v.split("]")[0].lstrip("[").lower()
+    return v.rsplit(":", 1)[0].lower()
+
+
+def _host_ok(headers):
+    """DNS rebinding 之后浏览器会带攻击者域名作为 Host，这里直接挡掉。"""
+    return _hostname(headers.get("Host")) in ALLOWED_HOSTS
+
+
+def _token_ok(headers):
+    if not TOKEN:
+        return True
+    given = headers.get("X-MyDesk-Token") or ""
+    return hmac.compare_digest(given.encode("utf-8"), TOKEN.encode("utf-8"))
+
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -3489,10 +3672,16 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "*")
+        """只回显来源；回显 null 是为了让 file:// 页面（不透明源）能用。"""
+        origin = self.headers.get("Origin")
+        if not origin:
+            return
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-MyDesk-Token")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Access-Control-Max-Age", "600")
 
     def _reply(self, code, body=b"", ctype=None):
         self.send_response(code)
@@ -3504,28 +3693,55 @@ class Handler(BaseHTTPRequestHandler):
         if body:
             self.wfile.write(body)
 
+    def _deny(self, code, reason):
+        self._reply(code, json.dumps({"ok": False, "error": reason}).encode(), "application/json")
+
+    def _guard(self, need_token):
+        if not _host_ok(self.headers):
+            self._deny(403, "host not allowed")
+            return False
+        if need_token and not _token_ok(self.headers):
+            self._deny(401, "token required")
+            return False
+        return True
+
     def do_OPTIONS(self):
-        self._reply(204)
+        self._reply(204 if _host_ok(self.headers) else 403)
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path == "/clipboard":
+            if not self._guard(True):
+                return
             text, err = CLIPBOARD.get()
             body = json.dumps({"ok": err is None, "text": text, "error": err}).encode()
             self._reply(200, body, "application/json")
             return
-        body = json.dumps({
-            "ok": True,
-            "screen": [SW, SH],
-            "backend": BACKEND.name,
-            "clipboard": CLIPBOARD.name,
-            "error": BACKEND.error or None,
-        }).encode()
-        self._reply(200, body, "application/json")
+        if not self._guard(False):
+            return
+        # 不带令牌只回最小信息：够页面判断“桥在不在”，但拿不到分辨率/后端。
+        info = {"ok": True, "auth": "token" if TOKEN else "none"}
+        if _token_ok(self.headers):
+            info.update({
+                "screen": [SW, SH],
+                "backend": BACKEND.name,
+                "clipboard": CLIPBOARD.name,
+                "error": BACKEND.error or None,
+            })
+        self._reply(200, json.dumps(info).encode(), "application/json")
 
     def do_POST(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        raw = self.rfile.read(n) if n else b"{}"
+        if not self._guard(True):
+            return
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            n = 0
+        if n > MAX_BODY:
+            self.close_connection = True
+            self._deny(413, "body too large")
+            return
+        raw = self.rfile.read(n) if n > 0 else b"{}"
         path = self.path.split("?", 1)[0]
         if path == "/clipboard":
             try:
@@ -3550,6 +3766,10 @@ if __name__ == "__main__":
         print("  On Wayland install ydotool (uinput); on X11 install pynput.", file=sys.stderr)
     print("MyDesk bridge  ->  http://127.0.0.1:%d   backend=%s   clipboard=%s   screen %dx%d"
           % (PORT, BACKEND.name, CLIPBOARD.name, SW, SH))
+    if TOKEN:
+        print("  配对令牌（粘贴到页面「系统级操控 → 配对令牌」）: %s" % TOKEN)
+    else:
+        print("  !! BRIDGE_TOKEN 为空：任何网页都能驱动本桥接，仅供调试", file=sys.stderr)
     httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     httpd.daemon_threads = True
     try:
@@ -3658,7 +3878,11 @@ function boot() {
 
   // 默认模式：由服务器托管时用「服务器」，本地文件用「手动」
   setMode(CAN_SERVER ? "server" : "manual");
-  const roomParam = CAN_SERVER ? new URL(location.href).searchParams.get("room") : null;
+  // 兼容老链接（?room=），新链接走 #room=
+  const hashRoom = /[#&]room=([A-Za-z0-9]+)/.exec(location.hash || "");
+  const roomParam = CAN_SERVER
+    ? (hashRoom ? hashRoom[1] : new URL(location.href).searchParams.get("room"))
+    : null;
   if (roomParam) {
     byId("joinCode").value = String(roomParam).toUpperCase().slice(0, 6);
     setTimeout(() => joinRoom(), 400);

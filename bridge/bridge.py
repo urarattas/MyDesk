@@ -5,10 +5,16 @@
 #   pynput   X11 / Windows / macOS —— 走 XTEST / SendInput
 #   ydotool  Linux Wayland —— 走 /dev/uinput，能注入原生 Wayland 窗口
 #
-# 仅监听 127.0.0.1:8765。
+# 仅监听 127.0.0.1:8765。但“只绑定回环”不等于“只有本机可信”：浏览器就在
+# 本机，任何打开的网页都能访问 127.0.0.1。所以除绑定回环外还有三道门：
+#   1. Host 必须是回环地址（挡住 DNS rebinding）；
+#   2. 注入键鼠、读写剪贴板必须带配对令牌（启动时打印，可用 BRIDGE_TOKEN 固定）；
+#   3. CORS 只回显来源，不再用 "*"。
 import glob
+import hmac
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -453,7 +459,7 @@ def _win_clipboard_set(text):
 
     CF_UNICODETEXT = 13
     GMEM_MOVEABLE = 0x0002
-    data = text.encode("utf-16-le") + b"\x00\x00"
+    data = text.encode("utf-16-le") + bytes(2)      # 结尾两个 NUL 字节
 
     handle = k.GlobalAlloc(GMEM_MOVEABLE, len(data))
     if not handle:
@@ -573,8 +579,40 @@ def apply_events(events):
 
 
 # --------------------------------------------------------------------------
-# HTTP
+# HTTP + 访问控制
 # --------------------------------------------------------------------------
+
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", ""}
+ALLOWED_HOSTS = LOOPBACK_HOSTS | {
+    h.strip().lower() for h in os.environ.get("BRIDGE_HOSTS", "").split(",") if h.strip()
+}
+
+TOKEN = os.environ.get("BRIDGE_TOKEN")
+if TOKEN is None:
+    TOKEN = secrets.token_hex(16)
+TOKEN = TOKEN.strip()
+
+MAX_BODY = 1024 * 1024
+
+
+def _hostname(value):
+    v = (value or "").strip()
+    if v.startswith("["):
+        return v.split("]")[0].lstrip("[").lower()
+    return v.rsplit(":", 1)[0].lower()
+
+
+def _host_ok(headers):
+    """DNS rebinding 之后浏览器会带攻击者域名作为 Host，这里直接挡掉。"""
+    return _hostname(headers.get("Host")) in ALLOWED_HOSTS
+
+
+def _token_ok(headers):
+    if not TOKEN:
+        return True
+    given = headers.get("X-MyDesk-Token") or ""
+    return hmac.compare_digest(given.encode("utf-8"), TOKEN.encode("utf-8"))
+
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -583,10 +621,16 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "*")
+        """只回显来源；回显 null 是为了让 file:// 页面（不透明源）能用。"""
+        origin = self.headers.get("Origin")
+        if not origin:
+            return
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-MyDesk-Token")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Access-Control-Max-Age", "600")
 
     def _reply(self, code, body=b"", ctype=None):
         self.send_response(code)
@@ -598,28 +642,55 @@ class Handler(BaseHTTPRequestHandler):
         if body:
             self.wfile.write(body)
 
+    def _deny(self, code, reason):
+        self._reply(code, json.dumps({"ok": False, "error": reason}).encode(), "application/json")
+
+    def _guard(self, need_token):
+        if not _host_ok(self.headers):
+            self._deny(403, "host not allowed")
+            return False
+        if need_token and not _token_ok(self.headers):
+            self._deny(401, "token required")
+            return False
+        return True
+
     def do_OPTIONS(self):
-        self._reply(204)
+        self._reply(204 if _host_ok(self.headers) else 403)
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path == "/clipboard":
+            if not self._guard(True):
+                return
             text, err = CLIPBOARD.get()
             body = json.dumps({"ok": err is None, "text": text, "error": err}).encode()
             self._reply(200, body, "application/json")
             return
-        body = json.dumps({
-            "ok": True,
-            "screen": [SW, SH],
-            "backend": BACKEND.name,
-            "clipboard": CLIPBOARD.name,
-            "error": BACKEND.error or None,
-        }).encode()
-        self._reply(200, body, "application/json")
+        if not self._guard(False):
+            return
+        # 不带令牌只回最小信息：够页面判断“桥在不在”，但拿不到分辨率/后端。
+        info = {"ok": True, "auth": "token" if TOKEN else "none"}
+        if _token_ok(self.headers):
+            info.update({
+                "screen": [SW, SH],
+                "backend": BACKEND.name,
+                "clipboard": CLIPBOARD.name,
+                "error": BACKEND.error or None,
+            })
+        self._reply(200, json.dumps(info).encode(), "application/json")
 
     def do_POST(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        raw = self.rfile.read(n) if n else b"{}"
+        if not self._guard(True):
+            return
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            n = 0
+        if n > MAX_BODY:
+            self.close_connection = True
+            self._deny(413, "body too large")
+            return
+        raw = self.rfile.read(n) if n > 0 else b"{}"
         path = self.path.split("?", 1)[0]
         if path == "/clipboard":
             try:
@@ -644,6 +715,10 @@ if __name__ == "__main__":
         print("  On Wayland install ydotool (uinput); on X11 install pynput.", file=sys.stderr)
     print("MyDesk bridge  ->  http://127.0.0.1:%d   backend=%s   clipboard=%s   screen %dx%d"
           % (PORT, BACKEND.name, CLIPBOARD.name, SW, SH))
+    if TOKEN:
+        print("  配对令牌（粘贴到页面「系统级操控 → 配对令牌」）: %s" % TOKEN)
+    else:
+        print("  !! BRIDGE_TOKEN 为空：任何网页都能驱动本桥接，仅供调试", file=sys.stderr)
     httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     httpd.daemon_threads = True
     try:

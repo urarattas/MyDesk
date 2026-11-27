@@ -1,0 +1,14 @@
+[package]
+name = "mydesk-core"
+description = "Config, signaling protocol, handshake codes and the input model shared by the MyDesk desktop client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+toml = "0.8"
+flate2 = "1"
+base64 = "0.22"

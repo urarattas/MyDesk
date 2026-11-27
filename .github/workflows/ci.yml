@@ -20,6 +20,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Check the embedded bridge script is not corrupt
+        run: npm run check:bridge
+
       - name: Smoke test the signaling server
         run: npm test
 

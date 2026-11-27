@@ -17,12 +17,23 @@ A console window shows the listening address; keep it open while you work.
 **Any platform, from source**
 
 ```bash
-pip install pynput
+pip install pynput==1.8.2
 python bridge.py
 ```
 
-Then, in the MyDesk page on the controlled machine, open **系统级操控** and press
-**检测**. The status turns to `已连接` and clicks/keystrokes are applied.
+The bridge prints a **pairing token** at startup:
+
+```text
+MyDesk bridge  ->  http://127.0.0.1:8765   backend=pynput   clipboard=win32   screen 2560x1440
+  配对令牌（粘贴到页面「系统级操控 → 配对令牌」）: 8f3c…
+```
+
+Then, in the MyDesk page on the controlled machine, paste that token into
+**系统级操控 → 配对令牌** and press **检测**. The status turns to `已连接` and
+clicks/keystrokes are applied.
+
+Pin the token with `BRIDGE_TOKEN=…` if you do not want to re-paste it every time
+the bridge restarts. An empty `BRIDGE_TOKEN` disables the check — debugging only.
 
 ## Wayland (Linux)
 
@@ -63,14 +74,30 @@ fractional scaling does not offset the cursor.
 
 ## Security
 
-- Binds `127.0.0.1` only. Nothing outside the machine can reach it, and it is not
-  a general-purpose remote-control daemon: it only consumes the event format the
-  page sends.
-- CORS is `*` on purpose — the page may be opened from `file://` (opaque origin).
-  Combined with the loopback binding this keeps the attack surface local.
-- Any process running as your user can also post events to it. That is the same
-  trust boundary as a local keyboard API; do not run it on a machine you share
-  with untrusted local accounts.
+Binding `127.0.0.1` is **not** the protection it looks like: the browser runs on
+the same machine, so every web page you open can reach `127.0.0.1:8765`. What
+actually keeps other people out:
+
+- **Pairing token.** `POST /input`, `POST /clipboard` and `GET /clipboard` all
+  require `X-MyDesk-Token` matching the token printed at startup. A page that does
+  not have it gets `401` and cannot type a single key.
+- **Host allowlist.** The `Host` header must be a loopback name. After a DNS
+  rebinding attack the browser sends the attacker's domain there, so the request
+  is refused with `403` even though it really did arrive at 127.0.0.1.
+- **CORS echoes instead of `*`.** The response mirrors the request `Origin`
+  (including `null`, so a `file://` page still works) and only allows the
+  `X-MyDesk-Token` header. There is no blanket wildcard any more, and
+  `Access-Control-Allow-Private-Network` is only granted on those replies.
+- **Bodies over 1 MiB are refused** with `413`.
+
+Remaining trust boundaries, unchanged and on purpose:
+
+- Any local process running as your user can read the token from its own console
+  or from `BRIDGE_TOKEN` and then post events. That is the same boundary as a
+  local keyboard API; do not run it on a machine you share with untrusted local
+  accounts.
+- The token is a bearer secret with no expiry: treat it like a password, and do
+  not paste it into a page served from a machine you do not control.
 
 ## Windows notes
 
@@ -102,11 +129,20 @@ the result to the release when a `bridge-v*` tag is pushed.
 
 ## HTTP surface
 
-| Method | Path | Meaning |
-| --- | --- | --- |
-| `GET` | `/healthz` | `{"ok":true,"screen":[width,height]}` |
-| `POST` | `/input` | `{"events":[...]}` — mouse/keyboard events, `204` on success |
-| `OPTIONS` | any | CORS preflight (including `Access-Control-Allow-Private-Network`) |
+| Method | Path | Auth | Meaning |
+| --- | --- | --- | --- |
+| `GET` | `/healthz` | none / token | `{"ok":true,"auth":"token"}`; with a valid token it also carries `screen`, `backend`, `clipboard`, `error` |
+| `POST` | `/input` | token | `{"events":[...]}` — mouse/keyboard events, `204` on success |
+| `GET` | `/clipboard` | token | `{"ok":true,"text":"…"}` — system clipboard as plain text |
+| `POST` | `/clipboard` | token | `{"text":"…"}` — overwrite the system clipboard, `204` on success |
+| `OPTIONS` | any | — | CORS preflight (`X-MyDesk-Token` is an allowed request header) |
+
+Auth column `token` means `X-MyDesk-Token: <token>` is required. Missing or wrong
+token → `401`; non-loopback `Host` → `403`; body over 1 MiB → `413`.
+
+Related environment variables: `BRIDGE_TOKEN` (pin the token), `BRIDGE_HOSTS`
+(extra allowed `Host` names, comma separated — for people who proxy the bridge),
+plus the existing `BRIDGE_PORT` and `BRIDGE_BACKEND`.
 
 Event format (all coordinates normalised to `0..1`):
 

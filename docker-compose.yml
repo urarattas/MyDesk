@@ -9,6 +9,13 @@ services:
       PORT: "8080"
       # Empty rooms are garbage collected after this long:
       # ROOM_TTL_MS: "1800000"
+      # Brute-force budget: machine-wide join attempts/second and the per-connection
+      # failure burst before a 5-minute cooldown.
+      # JOIN_RATE: "40"
+      # JOIN_FAIL_BURST: "12"
+      # Caps so one client cannot exhaust the process:
+      # MAX_CONNS: "512"
+      # MAX_ROOMS: "256"
     volumes:
       # Mount a HTML file from the host to update the served app without rebuilding:
       # - ./MyDesk.html:/app/MyDesk.html:ro

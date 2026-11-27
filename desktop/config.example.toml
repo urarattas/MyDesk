@@ -1,0 +1,48 @@
+# MyDesk 桌面客户端配置（Tauri 2）
+#
+# 位置（Windows 默认第一个）：
+#   %APPDATA%\MyDesk\config.toml
+#   %XDG_CONFIG_HOME%/mydesk/config.toml  ->  ~/.config/mydesk/config.toml
+# 也可用环境变量 MYDESK_CONFIG 指定别处。
+# 应用内「服务器」面板里填地址、点保存，等价于改这里的 [server].url。
+
+# "server" = 走信令服务器（房间号）；"manual" = 双方交换一次握手码
+mode = "server"
+
+[server]
+# 最近一次用的信令服务器；填过一次就会记住（历史见 recent）
+url = "https://desk.example.com"
+recent = []
+# 6 位房间号：留空 = 创建房间；填了 = 加入该房间
+room = ""
+fallback_to_manual = false
+
+[manual]
+# 手动模式用的握手码（RD1…），与网页端完全兼容
+code = ""
+
+[ice]
+# STUN 只用来发现公网地址，不转发数据；但对方能看到你的 IP
+urls = ["stun:stun.cloudflare.com:3478"]
+
+# 对称 NAT 的兜底（可选）
+# [ice.turn]
+# url = "turn:turn.example.com:3478?transport=udp"
+# username = "user"
+# password = "pass"
+
+[media]
+# 原生截屏走 GDI + JPEG（默认 1600 宽、质量 70），实测 2560×1440 上约 16 fps。
+# 「共享屏幕」时如果 WebView2 的 getDisplayMedia 可用会优先用它（能带系统音频），
+# 不可用时自动退到原生截屏（无音频）。
+codec = "h264"
+max_fps = 60
+bitrate_kbps = 6000
+monitor = 0
+
+[input]
+# 是否允许对方控制本机。默认关闭；等价于页面上的「允许对方控制我」开关。
+allow_remote = false
+# 本机鼠标上报上限（保留项：控制端原生命中率上限）
+max_hz = 1000
+clipboard = false

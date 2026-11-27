@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/smoke.mjs && node test/proxy.mjs"
+    "test": "node test/smoke.mjs && node test/proxy.mjs && node test/hardening.mjs",
+    "check:bridge": "node scripts/check-bridge.mjs"
   },
   "engines": {
     "node": ">=20"

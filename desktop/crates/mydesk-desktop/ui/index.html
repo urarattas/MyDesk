@@ -1,0 +1,3911 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>MyDesk · 单文件 P2P 远程桌面</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0e17'/%3E%3Crect x='6' y='8' width='20' height='13' rx='3' fill='none' stroke='%236c8cff' stroke-width='2'/%3E%3Cpath d='M12 25h8M16 21v4' stroke='%2339e0c2' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+/* ============================================================
+   MyDesk · 单文件 P2P 远程桌面
+   所有样式与逻辑内联，无任何外部资源。
+   ============================================================ */
+:root{
+  --bg:#070a10;
+  --bg-2:#0b1019;
+  --panel:rgba(20,26,38,.62);
+  --panel-2:rgba(255,255,255,.028);
+  --line:rgba(255,255,255,.075);
+  --line-2:rgba(255,255,255,.13);
+  --txt:#e9edf6;
+  --dim:#8d97ab;
+  --dim-2:#5f6a80;
+  --acc:#6c8cff;
+  --acc-2:#39e0c2;
+  --acc-3:#a879ff;
+  --ok:#35d68e;
+  --warn:#ffc65c;
+  --bad:#ff6b81;
+  --r:16px;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--txt);
+  font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(60vw 55vh at 8% -10%, rgba(108,140,255,.20), transparent 62%),
+    radial-gradient(55vw 50vh at 105% 105%, rgba(57,224,194,.14), transparent 60%),
+    radial-gradient(45vw 40vh at 88% -5%, rgba(168,121,255,.12), transparent 60%);
+}
+body::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;
+  background-image:linear-gradient(rgba(255,255,255,.022) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.022) 1px,transparent 1px);
+  background-size:56px 56px;
+  mask-image:radial-gradient(70% 60% at 50% 40%,#000 30%,transparent 78%);
+}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+:focus-visible{outline:2px solid rgba(108,140,255,.75);outline-offset:2px}
+.hidden{display:none!important}
+[hidden]{display:none!important}
+
+/* ---------- 顶栏 ---------- */
+.topbar{
+  position:relative;z-index:5;display:flex;align-items:center;gap:18px;
+  height:60px;padding:0 18px;border-bottom:1px solid var(--line);
+  background:rgba(8,11,18,.66);backdrop-filter:blur(18px);
+}
+.brand{display:flex;align-items:center;gap:11px;min-width:0;flex:1 1 auto}
+.logo{
+  width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none;
+  background:linear-gradient(145deg,rgba(108,140,255,.28),rgba(57,224,194,.16));
+  border:1px solid rgba(108,140,255,.35);box-shadow:0 6px 20px -8px rgba(108,140,255,.9);
+}
+.logo svg{width:19px;height:19px;display:block}
+.brand-txt{display:flex;flex-direction:column;line-height:1.2;min-width:0;overflow:hidden}
+.brand-txt strong{font-size:15px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand-txt span{font-size:11px;color:var(--dim-2);letter-spacing:.03em;white-space:nowrap}
+.live-stats{display:flex;gap:22px;margin-left:auto;padding-right:6px;flex:none}
+.live-stats>div{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25}
+.live-stats b{font:600 13px/1.2 var(--mono);color:#dbe3f5}
+.live-stats span{font-size:10.5px;color:var(--dim-2);letter-spacing:.06em}
+.top-actions{display:flex;align-items:center;gap:10px;margin-left:auto;flex:none}
+.top-actions>*{flex:none}
+.live-stats+.top-actions{margin-left:14px}
+.pill{
+  display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 12px;border-radius:99px;
+  font-size:12px;color:var(--dim);border:1px solid var(--line);background:rgba(255,255,255,.03);
+  white-space:nowrap;
+}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:#5b6579;flex:none}
+.pill.on{color:#c9f7e5;border-color:rgba(53,214,142,.32);background:rgba(53,214,142,.10)}
+.pill.on .dot{background:var(--ok);box-shadow:0 0 0 0 rgba(53,214,142,.6);animation:pulse 2s infinite}
+.pill.busy{color:#ffe3ad;border-color:rgba(255,198,92,.3);background:rgba(255,198,92,.09)}
+.pill.busy .dot{background:var(--warn);animation:pulse 1.2s infinite}
+.pill.err{color:#ffc7cf;border-color:rgba(255,107,129,.32);background:rgba(255,107,129,.1)}
+.pill.err .dot{background:var(--bad)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(53,214,142,.45)}70%{box-shadow:0 0 0 7px rgba(53,214,142,0)}100%{box-shadow:0 0 0 0 rgba(53,214,142,0)}}
+
+/* ---------- 布局 ---------- */
+main{
+  position:relative;z-index:2;
+  display:grid;grid-template-columns:346px minmax(0,1fr);gap:14px;
+  height:calc(100% - 60px);padding:14px;
+}
+.dock{display:flex;flex-direction:column;gap:12px;overflow-y:auto;overflow-x:hidden;padding-right:3px;scrollbar-width:thin}
+.dock::-webkit-scrollbar{width:7px}
+.dock::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:99px}
+.dock::-webkit-scrollbar-track{background:transparent}
+/* details 有 overflow:hidden，作为 flex 项时 min-height 会变成 0，必须禁止收缩 */
+.dock>*{flex:0 0 auto}
+
+/* ---------- 卡片 ---------- */
+.card{
+  position:relative;border:1px solid var(--line);border-radius:var(--r);
+  background:linear-gradient(170deg,rgba(255,255,255,.045),rgba(255,255,255,.014) 42%,rgba(255,255,255,.006));
+  box-shadow:0 18px 40px -28px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.05);
+  padding:14px;backdrop-filter:blur(14px);
+}
+.card-h{display:flex;align-items:center;gap:8px;margin-bottom:11px}
+.card-h .ico{
+  width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:11px;
+  background:rgba(108,140,255,.14);color:#a9bcff;border:1px solid rgba(108,140,255,.22);flex:none;
+}
+.card-h h2{margin:0;font-size:13.5px;font-weight:600;letter-spacing:.01em}
+.tag{
+  margin-left:auto;font-size:10px;letter-spacing:.04em;padding:2px 7px;border-radius:99px;
+  color:#9db0ff;background:rgba(108,140,255,.12);border:1px solid rgba(108,140,255,.22);white-space:nowrap;
+}
+.tag.warn{color:#ffd89a;background:rgba(255,198,92,.1);border-color:rgba(255,198,92,.24)}
+.tag.live{color:#a6f3d3;background:rgba(53,214,142,.12);border-color:rgba(53,214,142,.26)}
+.hint{color:var(--dim-2);font-size:11.5px;line-height:1.6;margin:9px 0 0}
+.hint b{color:var(--dim);font-weight:600}
+
+/* ---------- 按钮 ---------- */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  height:38px;padding:0 15px;border-radius:11px;font-size:13px;font-weight:600;letter-spacing:.01em;
+  border:1px solid var(--line-2);background:rgba(255,255,255,.05);color:#dde4f3;
+  transition:transform .12s ease,background .16s ease,border-color .16s ease,box-shadow .16s ease;
+  white-space:nowrap;
+}
+.btn:hover{background:rgba(255,255,255,.085);border-color:rgba(255,255,255,.2)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.42;cursor:not-allowed;transform:none}
+.btn.primary{
+  border-color:rgba(108,140,255,.5);
+  background:linear-gradient(135deg,#5f80ff,#7d63ff 70%,#9a6bff);
+  color:#fff;box-shadow:0 10px 26px -14px rgba(108,140,255,1), inset 0 1px 0 rgba(255,255,255,.22);
+}
+.btn.primary:hover{background:linear-gradient(135deg,#6d8cff,#8a70ff 70%,#a678ff)}
+.btn.sm{height:32px;padding:0 12px;font-size:12px;border-radius:9px}
+.btn.danger{color:#ffc2cb;border-color:rgba(255,107,129,.3);background:rgba(255,107,129,.09)}
+.btn.danger:hover{background:rgba(255,107,129,.16)}
+.btn.ghost{background:transparent}
+.btn.wide{width:100%}
+.btn-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.btn-row .btn{flex:1 1 auto}
+
+/* ---------- 表单 ---------- */
+textarea,input[type=text],select{
+  width:100%;border-radius:10px;border:1px solid var(--line-2);
+  background:rgba(4,7,13,.62);color:#dbe3f5;padding:9px 11px;font-size:12.5px;
+  transition:border-color .16s,box-shadow .16s;
+}
+textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.5;word-break:break-all}
+textarea:focus,input:focus,select:focus{
+  outline:none;border-color:rgba(108,140,255,.6);box-shadow:0 0 0 3px rgba(108,140,255,.14);
+}
+select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%238d97ab' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;cursor:pointer}
+.field{display:flex;align-items:center;gap:10px;margin-top:10px}
+.field label{font-size:12px;color:var(--dim);flex:none}
+.field select{flex:1}
+.row{display:flex;gap:8px;align-items:center}
+.row input[type=text]{flex:1;font-family:var(--mono);font-size:11.5px}
+.step{margin-top:12px}
+.step label{display:block;font-size:11.5px;color:var(--dim);margin-bottom:6px;letter-spacing:.01em}
+.step label em{font-style:normal;color:#8394ff;font-weight:600}
+
+/* ---------- 开关 ---------- */
+.sw{display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer;user-select:none}
+.sw input{position:absolute;opacity:0;width:0;height:0}
+.sw i{
+  position:relative;width:36px;height:20px;border-radius:99px;flex:none;
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.13);transition:all .18s ease;
+}
+.sw i::after{
+  content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+  background:#9aa5b8;transition:all .18s cubic-bezier(.4,1.4,.6,1);box-shadow:0 1px 3px rgba(0,0,0,.5);
+}
+.sw input:checked+i{background:linear-gradient(135deg,#5f80ff,#7d63ff);border-color:transparent}
+.sw input:checked+i::after{left:18px;background:#fff}
+.sw input:disabled+i{opacity:.45}
+.sw span{font-size:12.5px;color:#c7d0e2}
+.sw.mini i{width:30px;height:17px}
+.sw.mini i::after{width:11px;height:11px;top:2px;left:2px}
+.sw.mini input:checked+i::after{left:15px}
+.sw.mini span{font-size:11.5px;color:var(--dim);line-height:1.45}
+.sw.disabled span{color:var(--dim-2)}
+
+/* ---------- 预览 ---------- */
+.preview{
+  position:relative;aspect-ratio:16/9;border-radius:11px;overflow:hidden;
+  background:radial-gradient(circle at 50% 45%,#121a29,#05070c 78%);
+  border:1px solid var(--line);display:grid;place-items:center;
+}
+.preview video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#04060a}
+.preview-empty{position:relative;color:var(--dim-2);font-size:11.5px;letter-spacing:.06em}
+.preview-tag{
+  position:absolute;left:7px;top:7px;font-size:9.5px;letter-spacing:.05em;padding:2px 6px;border-radius:5px;
+  background:rgba(5,8,14,.72);color:#b9c6e2;border:1px solid rgba(255,255,255,.12);
+}
+.rcursor{
+  position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;
+  border:2px solid #39e0c2;background:rgba(57,224,194,.25);
+  box-shadow:0 0 12px rgba(57,224,194,.8);pointer-events:none;opacity:0;transition:opacity .2s;
+}
+.rcursor.show{opacity:1}
+.rcursor.click{animation:ghostClick .3s ease}
+@keyframes ghostClick{0%{transform:scale(1)}45%{transform:scale(.55);background:rgba(57,224,194,.85)}100%{transform:scale(1)}}
+
+/* ---------- 阶段 / 舞台 ---------- */
+.stage-wrap{min-width:0;min-height:0;display:flex}
+.stage{
+  position:relative;flex:1;min-height:260px;border-radius:18px;overflow:hidden;
+  background:radial-gradient(circle at 50% 40%,#0d1420,#04060a 72%);
+  border:1px solid var(--line);
+  box-shadow:0 30px 70px -40px rgba(0,0,0,1), inset 0 1px 0 rgba(255,255,255,.05);
+  transition:border-color .2s,box-shadow .2s;
+  touch-action:none;
+}
+.stage.hide-pointer, .stage.hide-pointer video{cursor:none}
+.stage.hide-pointer .stage-tools, .stage.hide-pointer .stage-tools *{cursor:pointer}
+.stage.capturing{border-color:rgba(57,224,194,.45);box-shadow:0 0 0 1px rgba(57,224,194,.22),0 30px 70px -40px #000}
+.stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:transparent;display:block}
+.stage-idle{
+  position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;
+}
+.orb{
+  position:absolute;width:min(52vw,540px);aspect-ratio:1;border-radius:50%;
+  background:radial-gradient(circle,rgba(108,140,255,.24),rgba(57,224,194,.08) 45%,transparent 68%);
+  filter:blur(12px);animation:orb 9s ease-in-out infinite alternate;
+}
+@keyframes orb{from{transform:scale(.92) translateY(6px);opacity:.75}to{transform:scale(1.06) translateY(-8px);opacity:1}}
+.idle-inner{position:relative;max-width:430px}
+.idle-ico{
+  width:64px;height:64px;margin:0 auto 16px;border-radius:19px;display:grid;place-items:center;
+  background:linear-gradient(150deg,rgba(108,140,255,.2),rgba(57,224,194,.1));
+  border:1px solid rgba(108,140,255,.3);box-shadow:0 20px 50px -24px rgba(108,140,255,.9);
+}
+.idle-ico svg{width:30px;height:30px}
+.idle-inner h3{margin:0 0 7px;font-size:17px;font-weight:600;letter-spacing:.01em}
+.idle-inner p{margin:0;color:var(--dim-2);font-size:12.5px;line-height:1.7}
+.chips{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin-top:16px}
+.chips span{
+  font-size:10.5px;letter-spacing:.05em;padding:4px 9px;border-radius:99px;color:#9fb0d4;
+  border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.035);
+}
+.stage-wait{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  display:flex;align-items:center;gap:10px;padding:11px 17px;border-radius:99px;
+  background:rgba(10,14,22,.82);border:1px solid var(--line-2);font-size:12.5px;color:#c3cee4;
+  backdrop-filter:blur(10px);
+}
+.spinner{width:13px;height:13px;border:2px solid rgba(255,255,255,.18);border-top-color:#7d94ff;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.kbd-hud.ghost-hint{color:#b9c6e2;background:rgba(10,14,22,.72);border-color:var(--line-2);opacity:.9}
+.kbd-hud{
+  position:absolute;left:50%;top:12px;transform:translateX(-50%);
+  display:flex;align-items:center;gap:8px;font-size:11.5px;color:#b7f7e3;
+  padding:6px 12px;border-radius:99px;background:rgba(8,32,26,.8);
+  border:1px solid rgba(57,224,194,.32);backdrop-filter:blur(8px);pointer-events:none;white-space:nowrap;
+}
+.peer-chip{
+  position:absolute;left:12px;bottom:12px;display:flex;align-items:center;gap:7px;
+  font-size:11.5px;color:#c8d3e8;padding:6px 11px;border-radius:99px;
+  background:rgba(6,9,15,.66);border:1px solid var(--line);backdrop-filter:blur(8px);pointer-events:none;
+}
+.peer-chip .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.stage-tools{position:absolute;right:12px;bottom:12px;display:flex;gap:7px;opacity:.55;transition:opacity .2s}
+.stage:hover .stage-tools{opacity:1}
+.tool{
+  width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:14px;
+  background:rgba(6,9,15,.72);border:1px solid var(--line-2);color:#cfd8ea;backdrop-filter:blur(8px);
+}
+.tool:hover{background:rgba(255,255,255,.1);color:#fff}
+.tool.off{color:#7c869c}
+.tool:disabled{opacity:.35;cursor:default}
+.tool svg{width:17px;height:17px;display:block}
+.tool .snd-wave{opacity:1;transition:opacity .15s}
+.tool .snd-slash{opacity:0;transition:opacity .15s}
+.tool.muted .snd-wave{opacity:0}
+.tool.muted .snd-slash{opacity:1}
+.tool.muted{color:#8b96ab}
+
+/* ---------- 权限横幅 ---------- */
+.perm{
+  margin-top:10px;padding:10px;border-radius:11px;
+  background:rgba(255,198,92,.08);border:1px solid rgba(255,198,92,.28);
+}
+.perm p{margin:0 0 8px;font-size:12px;color:#ffe1ad}
+.perm .btn-row{margin-top:0}
+
+/* ---------- 详情 ---------- */
+details.card{padding:0;overflow:hidden}
+details.card>summary{
+  list-style:none;cursor:pointer;padding:13px 14px;display:flex;align-items:center;gap:8px;
+  font-size:13.5px;font-weight:600;
+}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary::before{
+  content:"";width:6px;height:6px;border-right:1.6px solid var(--dim);border-bottom:1.6px solid var(--dim);
+  transform:rotate(-45deg);transition:transform .18s;margin-right:2px;
+}
+details[open].card>summary::before{transform:rotate(45deg)}
+details .dbody{padding:0 14px 14px;border-top:1px solid var(--line)}
+details .dbody>*:first-child{margin-top:12px}
+.steps{margin:12px 0 0;padding-left:18px;color:#c2cde0;font-size:11.8px;line-height:1.85}
+.steps li{margin-bottom:4px}
+.steps li::marker{color:#7f92ff;font-weight:600}
+.ice-adv{margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:rgba(255,255,255,.02)}
+.ice-adv>summary{list-style:none;cursor:pointer;padding:8px 0;font-size:11.5px;color:var(--dim);display:flex;align-items:center;gap:6px}
+.ice-adv>summary::-webkit-details-marker{display:none}
+.ice-adv>summary::before{content:"";width:5px;height:5px;border-right:1.5px solid var(--dim-2);border-bottom:1.5px solid var(--dim-2);transform:rotate(-45deg);transition:transform .18s}
+.ice-adv[open]>summary::before{transform:rotate(45deg)}
+.ice-adv[open]{padding-bottom:10px}
+.ice-adv textarea{margin-top:2px}
+.ice-adv .row input{flex:1;font-size:11.5px}
+.seg{display:flex;gap:4px;padding:3px;border-radius:10px;background:rgba(0,0,0,.32);border:1px solid var(--line);margin-bottom:11px}
+.seg button{flex:1;height:28px;border-radius:7px;font-size:12px;font-weight:600;color:var(--dim);transition:background .15s,color .15s}
+.seg button.on{background:rgba(255,255,255,.1);color:#e9edf6;box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
+.seg button:disabled{opacity:.35;cursor:not-allowed}
+.room-code{font:700 26px/1.2 var(--mono);letter-spacing:.2em;text-align:center;padding:13px 0 11px;
+  color:#dfe6f7;background:rgba(108,140,255,.08);border:1px dashed rgba(108,140,255,.38);border-radius:12px}
+.probe-list{margin-top:8px;display:flex;flex-direction:column;gap:4px}
+.probe-row{display:flex;align-items:center;gap:8px;font-size:10.5px;font-family:var(--mono);
+  padding:5px 8px;border-radius:7px;background:rgba(255,255,255,.025);border:1px solid var(--line)}
+.probe-row .u{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#aeb9cf}
+.probe-row .s{flex:none;font-weight:600}
+.probe-row .s.ok{color:#5ee2ae}
+.probe-row .s.bad{color:#ff8fa0}
+.probe-row .s.wait{color:var(--dim-2)}
+.code{
+  margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(3,6,11,.72);
+  border:1px solid var(--line);font-size:10.5px;line-height:1.5;color:#93a3c2;
+  max-height:190px;overflow:auto;white-space:pre;font-family:var(--mono);
+}
+.kv{display:flex;align-items:center;justify-content:space-between;margin-top:9px;font-size:11.5px;color:var(--dim-2)}
+.kv b{font-weight:600;color:var(--dim)}
+.kv b.on{color:var(--ok)}
+.kv b.off{color:var(--bad)}
+
+/* ---------- 日志 ---------- */
+.log{
+  margin-top:4px;max-height:132px;overflow:auto;border-radius:10px;padding:8px;
+  background:rgba(3,6,11,.55);border:1px solid var(--line);font-family:var(--mono);font-size:10.5px;line-height:1.65;
+}
+.log-line{display:flex;gap:7px;color:#7f8aa0}
+.log-line time{color:#48536a;flex:none}
+.log-line.ok span{color:#6fe0b0}
+.log-line.warn span{color:#ffd08a}
+.log-line.err span{color:#ff9aa8}
+
+/* ---------- Toast ---------- */
+#toast{
+  position:fixed;left:50%;bottom:26px;transform:translate(-50%,16px);z-index:60;
+  padding:10px 16px;border-radius:12px;font-size:12.5px;color:#e7ecf7;
+  background:rgba(14,19,30,.94);border:1px solid var(--line-2);
+  box-shadow:0 20px 50px -20px rgba(0,0,0,.95);backdrop-filter:blur(14px);
+  opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;max-width:min(90vw,520px);
+}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#toast.err{border-color:rgba(255,107,129,.4);color:#ffc7cf}
+#toast.ok{border-color:rgba(53,214,142,.36);color:#c7f8e4}
+
+/* ---------- 响应式 ---------- */
+@media (max-width:1000px){
+  .live-stats{gap:14px}
+  .live-stats>div:nth-child(2){display:none}
+  main{grid-template-columns:1fr;grid-template-rows:minmax(0,42vh) minmax(0,1fr)}
+  .stage-wrap{order:-1}
+  .dock{flex-direction:row;flex-wrap:wrap;align-content:flex-start}
+  .dock>.card,.dock>details.card{flex:1 1 300px;min-width:0}
+  .brand-txt span{display:none}
+}
+@media (max-width:640px){
+  .topbar{height:54px;padding:0 12px;gap:8px}
+  .live-stats{display:none}
+  main{height:calc(100% - 54px);padding:10px;gap:10px;grid-template-rows:minmax(0,38vh) minmax(0,1fr)}
+  .dock>.card,.dock>details.card{flex:1 1 100%}
+  .brand strong{font-size:14px}
+  .pill{padding:0 9px;font-size:11px}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none">
+        <rect x="2.5" y="4.5" width="19" height="12.5" rx="2.6" stroke="url(#lg)" stroke-width="1.7"/>
+        <path d="M8.5 20.5h7M12 17v3.5" stroke="#39e0c2" stroke-width="1.7" stroke-linecap="round"/>
+        <path d="M9.6 9.2l2.4 2.3 2.4-2.3" stroke="#8ea6ff" stroke-width="1.5" stroke-linecap="round"/>
+        <defs><linearGradient id="lg" x1="3" y1="4" x2="21" y2="18" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#8ea6ff"/><stop offset="1" stop-color="#39e0c2"/></linearGradient></defs>
+      </svg>
+    </div>
+    <div class="brand-txt">
+      <strong>MyDesk</strong>
+      <span>单文件 · 纯 P2P 远程桌面</span>
+    </div>
+  </div>
+
+  <div class="live-stats" id="liveStats" hidden>
+    <div><b id="hRes">—</b><span>画面</span></div>
+    <div><b id="hFps">—</b><span>帧率</span></div>
+    <div><b id="hBr">—</b><span>码率</span></div>
+    <div><b id="hRtt">—</b><span>延迟</span></div>
+  </div>
+
+  <div class="top-actions">
+    <span class="pill" id="connPill"><i class="dot"></i><span id="pillText">未连接</span></span>
+    <button class="btn sm ghost" id="btnDisconnect" disabled>断开</button>
+  </div>
+</header>
+
+<main>
+  <aside class="dock">
+
+    <!-- ========== 建立连接 ========== -->
+    <section class="card">
+      <div class="card-h">
+        <span class="ico">⇄</span><h2>建立连接</h2>
+        <span class="tag" id="sigTag">零服务器</span>
+      </div>
+
+      <div id="sigIdle">
+        <div class="seg" id="modeSeg">
+          <button type="button" data-mode="server">服务器</button>
+          <button type="button" data-mode="manual">手动</button>
+        </div>
+
+        <div id="srvBox">
+          <div id="srvLobby">
+            <p class="hint" style="margin-top:0">
+              在同一台信令服务器上开房，把<b>房间号或链接</b>发给对方即可，不用再复制长串握手码。
+            </p>
+            <button class="btn primary wide" id="btnCreateRoom" style="margin-top:10px">创建房间（我是被控端）</button>
+            <div class="row" style="margin-top:8px">
+              <input type="text" id="joinCode" maxlength="6" placeholder="输入 6 位房间号"
+                     autocomplete="off" spellcheck="false" style="text-transform:uppercase;letter-spacing:.14em">
+              <button class="btn" id="btnJoinRoom">加入</button>
+            </div>
+          </div>
+          <div id="srvRoom" class="hidden">
+            <div class="room-code" id="roomCode">------</div>
+            <p class="hint" id="srvStatus" style="text-align:center;margin-top:6px">等待对方加入…</p>
+            <input type="text" id="roomLink" readonly style="margin-top:8px;font-family:var(--mono);font-size:11px">
+            <div class="btn-row">
+              <button class="btn sm" id="btnCopyLink">复制链接</button>
+              <button class="btn sm ghost" id="btnLeaveRoom">取消</button>
+            </div>
+            <div class="perm" id="peerAsk" hidden>
+              <p>有人用这个房间号加入了。<b>确认是你认识的人再允许</b> —— 允许后对方会直接看到你已经共享的画面。</p>
+              <div class="btn-row">
+                <button class="btn sm primary" id="btnPeerAllow">允许连接</button>
+                <button class="btn sm" id="btnPeerDeny">拒绝</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="manualBox" class="hidden">
+          <p class="hint" style="margin-top:0">
+            两端各打开同一个 HTML 文件，<b>手动交换一次握手码</b>即可建立点对点直连。
+            全程无信令服务器、无中继，媒体流走 DTLS-SRTP 端到端加密。
+          </p>
+          <button class="btn primary wide" id="btnHost" style="margin-top:11px">① 创建邀请码（我是被控端）</button>
+          <button class="btn wide" id="btnGuest" style="margin-top:8px">② 接受邀请（我是控制端）</button>
+        </div>
+
+        <label class="sw mini" style="margin-top:10px">
+          <input type="checkbox" id="swStun" checked><i></i>
+          <span>启用 ICE 服务器（STUN 只做地址发现，不转发数据）</span>
+        </label>
+        <p class="hint" style="margin-top:2px">同一局域网内可以取消勾选，完全离线也能直连。</p>
+
+        <details class="ice-adv" id="iceAdv">
+          <summary>高级：自定义 STUN / TURN</summary>
+          <textarea id="iceList" rows="3" spellcheck="false"
+            placeholder="stun:stun.cloudflare.com:3478&#10;turn:你的服务器:3478?transport=udp"></textarea>
+          <div class="row" style="margin-top:7px">
+            <input type="text" id="turnUser" placeholder="TURN 用户名（可选）" spellcheck="false">
+            <input type="text" id="turnPass" placeholder="TURN 密码（可选）" spellcheck="false">
+          </div>
+          <div class="btn-row">
+            <button class="btn sm ghost" id="btnIceReset">恢复默认</button>
+            <button class="btn sm ghost" id="btnIceProbe">检测可用性</button>
+          </div>
+          <div class="probe-list" id="iceProbe"></div>
+          <p class="hint">
+            每行一个地址。默认是国内实测可用的公共 STUN；不同运营商可达性不同，建议先点「检测可用性」。
+            用 EasyTier 组网时填虚拟网里的 STUN，例如 <code>stun:10.144.1.1:3478</code>（脚本在下方「网络救急」）。
+          </p>
+        </details>
+      </div>
+
+      <div id="sigHost" class="hidden">
+        <div class="step">
+          <label>第 1 步 · 把这段<em>邀请码</em>发给对方</label>
+          <textarea id="hostOut" rows="4" readonly spellcheck="false" placeholder="正在收集网络候选…"></textarea>
+          <div class="btn-row">
+            <button class="btn sm" id="btnCopyOffer">复制邀请码</button>
+            <button class="btn sm ghost" id="btnCancelHost">取消</button>
+          </div>
+        </div>
+        <div class="step">
+          <label>第 2 步 · 粘贴对方返回的<em>回执码</em></label>
+          <textarea id="hostIn" rows="3" spellcheck="false" placeholder="RD1..."></textarea>
+          <div class="btn-row">
+            <button class="btn sm primary" id="btnAcceptAnswer">完成连接</button>
+            <button class="btn sm ghost" id="btnPasteAnswer">粘贴</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="sigGuest" class="hidden">
+        <div class="step" id="guestStep1">
+          <label>第 1 步 · 粘贴对方发来的<em>邀请码</em></label>
+          <textarea id="guestIn" rows="3" spellcheck="false" placeholder="RD1..."></textarea>
+          <div class="btn-row">
+            <button class="btn sm primary" id="btnMakeAnswer">生成回执码</button>
+            <button class="btn sm ghost" id="btnPasteOffer">粘贴</button>
+            <button class="btn sm ghost" id="btnCancelGuest">返回</button>
+          </div>
+        </div>
+        <div class="step hidden" id="guestStep2">
+          <label>第 2 步 · 把<em>回执码</em>发回给对方</label>
+          <textarea id="guestOut" rows="4" readonly spellcheck="false"></textarea>
+          <div class="btn-row">
+            <button class="btn sm" id="btnCopyAnswer">复制回执码</button>
+            <button class="btn sm ghost" id="btnCancelGuest2">取消</button>
+          </div>
+          <p class="hint">发回后等待对方点击「完成连接」，无需再操作。</p>
+        </div>
+      </div>
+
+      <div id="sigLive" class="hidden">
+        <div class="kv" style="margin-top:0"><span>连接方式</span><b id="liveMode">P2P 直连</b></div>
+        <div class="kv"><span>本机角色</span><b id="liveRole">—</b></div>
+        <div class="kv"><span>数据通道</span><b id="liveDc">—</b></div>
+        <div class="kv"><span>加密</span><b>DTLS-SRTP</b></div>
+        <div class="kv"><span>视频编码</span><b id="liveCodec">—</b></div>
+        <div class="kv"><span>解码能力</span><b id="liveHw">—</b></div>
+        <div class="kv"><span>ICE 候选（本机）</span><b id="liveCand">—</b></div>
+        <div class="kv"><span>ICE 候选（对方）</span><b id="liveCandR">—</b></div>
+        <p class="hint">两端现在都可以「共享屏幕」并控制对方。控制需要对方在下方开关中授权。</p>
+      </div>
+
+      <div class="hint" id="sigErr" style="color:#ffb3bf"></div>
+    </section>
+
+    <!-- ========== 我的画面 ========== -->
+    <section class="card">
+      <div class="card-h"><span class="ico">▣</span><h2>我的画面</h2><span class="tag" id="shareTag" hidden>共享中</span></div>
+      <div class="preview" id="previewWrap">
+        <video id="preview" muted playsinline autoplay></video>
+        <div class="preview-empty" id="previewEmpty">未共享</div>
+        <span class="preview-tag" id="previewTag" hidden></span>
+        <div class="rcursor" id="ghost"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary sm" id="btnShare">共享屏幕</button>
+        <button class="btn sm" id="btnTestShare">测试画面</button>
+        <button class="btn sm danger hidden" id="btnStopShare">停止共享</button>
+      </div>
+    </section>
+
+    <!-- ========== 控制 ========== -->
+    <section class="card">
+      <div class="card-h"><span class="ico">⌁</span><h2>控制</h2></div>
+      <label class="sw"><input type="checkbox" id="swAllow"><i></i><span>允许对方控制我的电脑</span></label>
+      <label class="sw" id="swControlWrap"><input type="checkbox" id="swControl" disabled><i></i><span>我可以控制对方</span></label>
+      <div class="hint" id="controlHint">连接后可用。对方未授权时无法操作。</div>
+
+      <div class="perm" id="permBanner" hidden>
+        <p>对方请求控制你的电脑</p>
+        <div class="btn-row">
+          <button class="btn sm primary" id="btnPermAllow">允许</button>
+          <button class="btn sm" id="btnPermDeny">拒绝</button>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:12px">
+        <label for="codecPref">发送编码</label>
+        <select id="codecPref">
+          <option value="auto" selected>自动 · 浏览器协商</option>
+          <option value="h264">H.264 · 硬解最普及</option>
+          <option value="vp9">VP9 · 文字更清晰</option>
+          <option value="av1">AV1 · 最省带宽最吃 CPU</option>
+        </select>
+      </div>
+      <p class="hint" style="margin-top:4px">切换<b>即时生效，不用重新握手</b>。默认「自动」交给浏览器协商（Chrome 通常选 VP8）；本项只影响自己发出去的画面。</p>
+
+      <label class="sw mini" style="margin-top:6px">
+        <input type="checkbox" id="swHideCursor" checked><i></i>
+        <span>控制时隐藏本机光标</span>
+      </label>
+      <label class="sw mini" style="margin-top:2px">
+        <input type="checkbox" id="swClip" checked><i></i>
+        <span>剪贴板同步（Ctrl+C / Ctrl+V）</span>
+      </label>
+
+      <div class="field">
+        <label for="quality">画质</label>
+        <select id="quality">
+          <option value="1.2">流畅 · 1.2 Mbps</option>
+          <option value="3" selected>均衡 · 3 Mbps</option>
+          <option value="6">高清 · 6 Mbps</option>
+          <option value="12">超清 · 12 Mbps</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- ========== 系统级桥接 ========== -->
+    <details class="card" id="bridgeCard">
+      <summary>系统级操控<span class="tag warn" style="margin-left:8px">可选</span></summary>
+      <div class="dbody">
+        <p class="hint" style="margin-top:0">
+          浏览器安全沙箱<b>无法直接注入系统级键鼠</b>。运行下面的 Python 小助手（仅监听 127.0.0.1）后，
+          收到的键鼠事件会转发到真实桌面；不运行也能正常观看画面。
+        </p>
+        <div class="row" style="margin-top:10px">
+          <input type="text" id="bridgeUrl" value="http://127.0.0.1:8765" spellcheck="false">
+          <button class="btn sm" id="btnBridgeConnect">检测</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input type="text" id="bridgeToken" spellcheck="false" autocomplete="off" placeholder="配对令牌">
+        </div>
+        <p class="hint" style="margin-top:6px">
+          桥接<b>要求配对令牌</b>：bridge.py / MyDeskBridge.exe 启动时会在控制台打印
+          <code>配对令牌: …</code>，粘贴到这里再点「检测」。没有令牌时任何网页都无法驱动它。
+        </p>
+        <div class="kv"><span>桥接状态</span><b id="bridgeStatus">未启用</b></div>
+        <pre class="code" id="bridgeScript"></pre>
+        <div class="btn-row">
+          <button class="btn sm" id="btnCopyScript">复制脚本</button>
+          <button class="btn sm" id="btnDownloadScript">下载 bridge.py</button>
+          <button class="btn sm" id="btnDownloadExe">下载 bridge.exe</button>
+        </div>
+        <p class="hint">脚本依赖 <b>Python 3</b> + <b>pynput</b>（<code>pip install pynput</code>）；打包版
+          <b>MyDeskBridge.exe</b> 不需要装 Python，双击即用。两者都只绑定 127.0.0.1，且都需要上面的配对令牌。
+          打包版未签名，下载后请对照 Release 页里的 <code>.sha256</code> 校验：<br>
+          <code>certutil -hashfile MyDeskBridge.exe SHA256</code></p>
+      </div>
+    </details>
+
+    <!-- ========== 网络救急 ========== -->
+    <details class="card" id="netCard">
+      <summary>网络救急：STUN / EasyTier<span class="tag warn" style="margin-left:8px">可选</span></summary>
+      <div class="dbody">
+        <p class="hint" style="margin-top:0">
+          双方都是对称型 NAT 时 WebRTC 打洞会失败。两条兜底路线：<b>① 填 TURN</b>（上方「高级」里加一行）；
+          <b>② 用 EasyTier 组一个虚拟局域网</b>，让 WebRTC 走虚拟网 IP。
+        </p>
+        <p class="hint">
+          <b>为什么还需要 STUN 脚本：</b>Chrome 会把 host 候选隐藏成 <code>xxx.local</code>（mDNS），
+          TUN 虚拟网一般转发不了这个组播。在虚拟网里跑一个 STUN，候选就会变成虚拟网 IP，直连成功率最高。
+        </p>
+        <div class="step">
+          <label>虚拟网 STUN 服务（Python 3，仅标准库）</label>
+          <pre class="code" id="stunScript"></pre>
+          <div class="btn-row">
+            <button class="btn sm" id="btnCopyStun">复制脚本</button>
+            <button class="btn sm" id="btnDownloadStun">下载 stun.py</button>
+          </div>
+        </div>
+        <div class="step">
+          <label>EasyTier 组网步骤</label>
+          <pre class="code" id="etSteps"></pre>
+        </div>
+      </div>
+    </details>
+
+    <!-- ========== 帮助 ========== -->
+    <details class="card" id="helpCard">
+      <summary>使用说明</summary>
+      <div class="dbody">
+        <ol class="steps">
+          <li>两台设备各打开<b>同一份 HTML</b>（直接拷文件过去即可，无需安装）。</li>
+          <li>A 点「创建邀请码」→ 复制 → 用任意聊天工具发给 B。</li>
+          <li>B 点「接受邀请」→ 粘贴邀请码 → 生成回执码 → 发回给 A。</li>
+          <li>A 粘贴回执码 → 点「完成连接」→ 双方显示「已连接 · P2P」。</li>
+          <li>任一端点「共享屏幕」，另一端即可实时看到画面。</li>
+          <li>编码可随时切换（自动 / H.264 / VP9 / AV1），<b>即时生效，不用重新握手</b>。</li>
+          <li>要操作对方：被控端打开「允许对方控制我」，控制端打开「我可以控制对方」，然后点击画面接管键鼠。</li>
+        </ol>
+        <p class="hint">
+          <b>网络</b>：同局域网/同一 NAT 后可直连；跨网络靠 NAT 打洞，STUN 只用于发现公网地址，不转发任何数据。
+          双方都是对称型 NAT 时无法直连——这是 P2P 的固有限制，除非自建 TURN 中继。
+        </p>
+        <p class="hint">
+          <b>安全</b>：握手码就是凭证，谁拿到都能连；媒体为 DTLS-SRTP 端到端加密；控制权限默认关闭，
+          需被控端显式授权，可随时撤销。
+        </p>
+        <p class="hint">
+          <b>限制</b>：浏览器无法直接操作系统输入，真正的键鼠注入需要可选的本地桥接（上方「系统级操控」）。
+        </p>
+      </div>
+    </details>
+
+    <!-- ========== 日志 ========== -->
+    <section class="card">
+      <div class="card-h"><span class="ico">≡</span><h2>运行日志</h2></div>
+      <div class="log" id="logBox"></div>
+    </section>
+  </aside>
+
+  <!-- ========== 舞台 ========== -->
+  <section class="stage-wrap">
+    <div class="stage" id="stage" tabindex="0">
+      <video id="remote" autoplay playsinline muted></video>
+
+      <div class="stage-idle" id="stageIdle">
+        <div class="orb"></div>
+        <div class="idle-inner">
+          <div class="idle-ico">
+            <svg viewBox="0 0 32 32" fill="none">
+              <rect x="3" y="6" width="26" height="17" rx="3.2" stroke="url(#g1)" stroke-width="1.8"/>
+              <path d="M11 28h10M16 23v5" stroke="#39e0c2" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M12.4 12.4h7.2M12.4 16.6h4.4" stroke="#7d94ff" stroke-width="1.8" stroke-linecap="round"/>
+              <defs><linearGradient id="g1" x1="3" y1="6" x2="29" y2="23" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#8ea6ff"/><stop offset="1" stop-color="#39e0c2"/></linearGradient></defs>
+            </svg>
+          </div>
+          <h3>这里会显示对方的屏幕</h3>
+          <p>两端各打开本文件，交换一次握手码即可直连。没有账号，没有服务器，没有中继。</p>
+          <div class="chips">
+            <span>端到端加密</span><span>零中转</span><span>单文件离线可用</span><span>双向控制</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage-wait hidden" id="stageWait"><i class="spinner"></i><span>等待对方共享屏幕…</span></div>
+
+      <div class="kbd-hud hidden" id="kbdHud">
+        <span id="kbdHudIcon">⌨</span><span id="kbdHudText">键鼠已接管 · Esc 释放</span>
+      </div>
+
+      <div class="peer-chip hidden" id="peerChip"><i class="dot"></i><span>对方屏幕</span></div>
+
+      <div class="stage-tools">
+        <button class="tool muted" id="btnSound" title="对方没有共享音频" aria-label="声音开关" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 9.4h3.2L12 5.8v12.4L7.2 14.6H4z"/>
+            <path class="snd-wave" d="M15.4 9.1a4.1 4.1 0 0 1 0 5.8M17.9 7a7.4 7.4 0 0 1 0 10"/>
+            <path class="snd-slash" d="M15.6 8.6l5 6"/>
+          </svg>
+        </button>
+        <button class="tool" id="btnFullscreen" title="全屏" aria-label="全屏">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 9V4.8h4.2M20 9V4.8h-4.2M4 15v4.2h4.2M20 15v4.2h-4.2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+"use strict";
+
+/* ============================================================
+   0. 常量 & 工具
+   ============================================================ */
+const CODE_PREFIX = "RD1";
+const CODE_MAX_IN = 96 * 1024;          // 握手码 base64 长度上限
+const CODE_MAX_OUT = 4 * 1024 * 1024;   // 解压输出上限
+const MAX_LOG = 160;
+// 国内可用的公共 STUN（实测可达，按延迟排序），最后附一个海外兜底
+// 每条 m-line 固定绑定一种编码；切换 = 把轨道挪到另一条收发器，不需要重新协商
+const CODEC_SLOTS = ["auto", "h264", "vp9", "av1"];
+const CODEC_LABEL = { auto: "自动", h264: "H.264", vp9: "VP9", av1: "AV1" };
+const codecLabel = (i) => CODEC_LABEL[CODEC_SLOTS[i]] || String(CODEC_SLOTS[i]).toUpperCase();
+
+const DEFAULT_ICE = [
+  "stun:stun.douyucdn.cn:18000",
+  "stun:stun.hitv.com:3478",
+  "stun:stun.chat.bilibili.com:3478",
+  "stun:stun.miwifi.com:3478",
+  "stun:stun.cloudflare.com:3478"
+];
+
+const $ = (s, r = document) => r.querySelector(s);
+const byId = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+function toast(msg, kind = "", ms = 2600) {
+  const t = byId("toast");
+  t.textContent = msg;
+  t.className = "show " + kind;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { t.className = ""; }, ms);
+}
+
+function log(msg, kind = "") {
+  const box = byId("logBox");
+  if (!box) return;
+  const d = document.createElement("div");
+  d.className = "log-line " + kind;
+  const time = new Date().toTimeString().slice(0, 8);
+  const tt = document.createElement("time");
+  tt.textContent = time;
+  const sp = document.createElement("span");
+  sp.textContent = msg;
+  d.append(tt, sp);
+  box.appendChild(d);
+  while (box.children.length > MAX_LOG) box.firstChild.remove();
+  box.scrollTop = box.scrollHeight;
+}
+
+/* ---------- base64url ---------- */
+function bytesToB64u(bytes) {
+  let bin = "";
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  }
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function b64uToBytes(str) {
+  const s = str.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = s.length % 4 ? 4 - (s.length % 4) : 0;
+  const bin = atob(s + "=".repeat(pad));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+async function deflateRaw(bytes) {
+  if (typeof CompressionStream === "undefined") return null;
+  try {
+    const cs = new CompressionStream("deflate-raw");
+    const stream = new Blob([bytes]).stream().pipeThrough(cs);
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch (e) { return null; }
+}
+async function inflateRaw(bytes) {
+  const ds = new DecompressionStream("deflate-raw");
+  const stream = new Blob([bytes]).stream().pipeThrough(ds);
+  // 解压比约 1000:1，没有上限的话一段几 MB 的“邀请码”能撑到几 GB。
+  const reader = stream.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > CODE_MAX_OUT) {
+      try { await reader.cancel(); } catch (e) {}
+      throw new Error("握手码解压后过大，已中止（可能是构造出来的）");
+    }
+    chunks.push(value);
+  }
+  const buf = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) { buf.set(c, at); at += c.length; }
+  return buf;
+}
+
+/** 把 SDP 压成便于复制的一行握手码 */
+async function packCode(desc) {
+  const payload = { v: 1, t: desc.type, s: desc.sdp };
+  const raw = new TextEncoder().encode(JSON.stringify(payload));
+  const packed = await deflateRaw(raw);
+  if (packed) return CODE_PREFIX + "z" + bytesToB64u(packed);
+  return CODE_PREFIX + "p" + bytesToB64u(raw);
+}
+/** 解析握手码（容忍混入的空白与换行） */
+async function unpackCode(text) {
+  const clean = String(text || "").replace(/\s+/g, "");
+  if (!clean) throw new Error("请先粘贴握手码");
+  if (!clean.startsWith(CODE_PREFIX)) throw new Error("不是有效的 MyDesk 握手码（应以 RD1 开头）");
+  const flag = clean[CODE_PREFIX.length];
+  const body = clean.slice(CODE_PREFIX.length + 1);
+  if (body.length > CODE_MAX_IN) throw new Error("握手码过长，已拒绝（正常不会超过几十 KB）");
+  const bytes = b64uToBytes(body);
+  let raw;
+  if (flag === "z") raw = await inflateRaw(bytes);
+  else if (flag === "p") raw = bytes;
+  else throw new Error("握手码格式无法识别");
+  const obj = JSON.parse(new TextDecoder().decode(raw));
+  if (!obj || typeof obj.s !== "string") throw new Error("握手码内容已损坏");
+  if (obj.t !== "offer" && obj.t !== "answer") throw new Error("握手码类型不正确");
+  return obj;
+}
+
+async function copyText(text, btn) {
+  let done = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    done = true;
+  } catch (e) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;opacity:0;left:-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      done = document.execCommand("copy");
+      ta.remove();
+    } catch (e2) { done = false; }
+  }
+  if (done) {
+    toast("已复制到剪贴板", "ok", 1500);
+    if (btn) {
+      const old = btn.textContent;
+      btn.textContent = "✓ 已复制";
+      setTimeout(() => { btn.textContent = old; }, 1400);
+    }
+  } else {
+    toast("复制失败，请手动全选复制", "err");
+  }
+}
+
+function downloadText(text, filename, mime) {
+  const blob = new Blob([text], { type: (mime || "text/plain") + ";charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+async function pasteInto(el) {
+  try {
+    const txt = await navigator.clipboard.readText();
+    if (!txt) { toast("剪贴板是空的"); return; }
+    el.value = txt.trim();
+    toast("已粘贴", "ok", 1300);
+  } catch (e) {
+    toast("浏览器不允许读取剪贴板，请按 Ctrl+V 手动粘贴");
+    el.focus();
+  }
+}
+
+/* ============================================================
+   1. 状态
+   ============================================================ */
+const S = {
+  phase: "idle",          // idle | host-offer | guest-input | guest-answer | connecting | live | closed
+  role: null,             // host | guest
+  pc: null,
+  dcCtl: null,
+  dcInput: null,
+  localStream: null,
+  remoteStream: null,
+  sharing: false,
+  allowControl: false,
+  wantControl: false,
+  remoteAllows: false,
+  bridge: { ok: false, url: "http://127.0.0.1:8765", token: "", queue: [], inflight: false, checkedAt: 0 },
+  remoteBridge: null,
+  warnedDc: false,
+  stats: { timer: 0, pingTimer: 0, lastIn: 0, lastOut: 0, lastTs: 0, lastInFrames: 0, lastOutFrames: 0, ping: null, pingId: 0, pingSent: new Map() },
+  testTimer: 0,
+  input: { held: new Set(), active: false, keyLock: false, raf: 0, pending: null, wheel: 0, wheelTimer: 0, downOnStage: false },
+  hideCursor: true,
+  clipSync: true,
+  clipPending: 0,          // 已发出、尚未收到回复的 clip-req 数量
+  peerAsking: false,       // 房间里有陌生人等待我确认
+  remoteSharing: null,
+  replacingStream: false,
+  candLocal: null,
+  candRemote: null,
+  videoTx: [],
+  activeSlot: 0,
+  rxSlots: [],
+  remoteSlot: 0,
+  remoteVideoTrack: null,
+  mode: "manual"
+};
+
+/* ============================================================
+   2. UI 渲染
+   ============================================================ */
+const dom = {
+  connPill: byId("connPill"),
+  pillText: byId("pillText"),
+  sigIdle: byId("sigIdle"),
+  sigHost: byId("sigHost"),
+  sigGuest: byId("sigGuest"),
+  sigLive: byId("sigLive"),
+  sigErr: byId("sigErr"),
+  sigTag: byId("sigTag"),
+  liveStats: byId("liveStats"),
+  stageIdle: byId("stageIdle"),
+  stageWait: byId("stageWait"),
+  stage: byId("stage"),
+  remote: byId("remote"),
+  kbdHud: byId("kbdHud"),
+  peerChip: byId("peerChip"),
+  btnDisconnect: byId("btnDisconnect")
+};
+
+function setPill(text, kind) {
+  dom.pillText.textContent = text;
+  dom.connPill.className = "pill" + (kind ? " " + kind : "");
+}
+
+function render() {
+  const p = S.phase;
+  const live = p === "live";
+  const roomPhase = p === "srv-room" || p === "srv-connecting";
+  const idleish = p === "idle" || p === "closed" || roomPhase;
+
+  dom.sigIdle.classList.toggle("hidden", !idleish);
+  dom.sigHost.classList.toggle("hidden", p !== "host-offer");
+  dom.sigGuest.classList.toggle("hidden", !(p === "guest-input" || p === "guest-answer"));
+  dom.sigLive.classList.toggle("hidden", !live);
+
+  byId("guestStep1").classList.toggle("hidden", p !== "guest-input");
+  byId("guestStep2").classList.toggle("hidden", p !== "guest-answer");
+  byId("srvLobby").classList.toggle("hidden", roomPhase);
+  byId("srvRoom").classList.toggle("hidden", !roomPhase);
+  byId("srvStatus").textContent = p === "srv-connecting" ? "对方已加入，正在协商…"
+    : S.peerAsking ? "有人在请求连接，请确认是否允许" : "等待对方加入…";
+
+  const busy = !!(S.pc && (live || p === "connecting" || p === "host-offer" || p === "guest-answer"))
+    || !!SRV.ws || roomPhase;
+  dom.btnDisconnect.disabled = !busy;
+  dom.liveStats.hidden = !live;
+
+  const idle = p === "idle" || p === "closed";
+  byId("sigTag").textContent = live ? "已直连"
+    : roomPhase ? "信令服务器"
+    : idle ? (S.mode === "server" ? "信令服务器" : "零服务器")
+    : "握手中";
+  byId("sigTag").className = "tag" + (live ? " live" : "");
+
+  byId("liveRole").textContent = S.role === "host" ? "被控端（发起方）" : "控制端（加入方）";
+  byId("liveDc").textContent = (S.dcCtl && S.dcCtl.readyState === "open" && S.dcInput && S.dcInput.readyState === "open")
+    ? "双通道已就绪" : "连接中…";
+  byId("liveCand").textContent = fmtCand(S.candLocal);
+  byId("liveCandR").textContent = fmtCand(S.candRemote);
+
+  byId("swControl").disabled = !live;
+  byId("swControlWrap").classList.toggle("disabled", !live);
+  byId("swAllow").disabled = !S.pc;
+
+  if (live) {
+    if (!S.remoteAllows) {
+      byId("controlHint").textContent = "对方尚未授权控制，可先勾选上方开关发起请求。";
+    } else if (S.remoteBridge === false) {
+      byId("controlHint").textContent = "对方的本机桥接未连接，键鼠事件收不到；让对方在「系统级操控」里点一次检测。";
+    } else {
+      byId("controlHint").textContent = "点击右侧画面接管键鼠；Esc 释放，再次点击画面继续。";
+    }
+  } else {
+    byId("controlHint").textContent = "连接后可用。对方未授权时无法操作。";
+  }
+
+  updateStageOverlay();
+}
+
+function remoteVisible() {
+  const t = S.remoteVideoTrack;
+  if (!t || t.muted || dom.remote.videoWidth === 0) return false;
+  return S.remoteSharing !== false;
+}
+
+function updateStageOverlay() {
+  const live = S.phase === "live";
+  const hasRemoteVideo = remoteVisible();
+  dom.stageIdle.classList.toggle("hidden", live);
+  dom.stageWait.classList.toggle("hidden", !(live && !hasRemoteVideo));
+  dom.peerChip.classList.toggle("hidden", !(live && hasRemoteVideo));
+  const hud = dom.kbdHud;
+  if (S.input.active) {
+    hud.className = "kbd-hud";
+    byId("kbdHudIcon").textContent = "⌨";
+    byId("kbdHudText").textContent = "键鼠已接管 · Esc 释放";
+  } else if (live && hasRemoteVideo && S.wantControl && S.remoteAllows) {
+    hud.className = "kbd-hud ghost-hint";
+    byId("kbdHudIcon").textContent = "◎";
+    byId("kbdHudText").textContent = "点击画面接管键鼠";
+  } else {
+    hud.className = "kbd-hud hidden";
+  }
+  dom.stage.classList.toggle("capturing", S.input.active);
+  dom.stage.classList.toggle("hide-pointer", S.input.active && S.hideCursor);
+}
+
+function setPhase(p) {
+  S.phase = p;
+  render();
+}
+
+/* ============================================================
+   3. 信令（纯手动，无服务器）
+   ============================================================ */
+const ICE_KEY = "mydesk.ice.v1";
+const TURN_PASS_KEY = "mydesk.turnpass.v1";   // 只放 sessionStorage，不落盘
+
+function parseIceUrls() {
+  return (byId("iceList").value || "")
+    .split(/[\s,]+/)
+    .map((u) => u.trim())
+    .filter((u) => /^(stuns?|turns?):/i.test(u));
+}
+
+function iceServers() {
+  const sw = byId("swStun");
+  if (sw && !sw.checked) return [];          // 纯局域网 / 离线模式
+  const urls = parseIceUrls();
+  const user = byId("turnUser").value.trim();
+  const pass = byId("turnPass").value;
+  return urls.map((u) => (/^turns?:/i.test(u) && (user || pass)
+    ? { urls: u, username: user, credential: pass }
+    : { urls: u }));
+}
+
+function loadIceConfig() {
+  byId("iceList").value = DEFAULT_ICE.join("\n");
+  try {
+    const saved = JSON.parse(localStorage.getItem(ICE_KEY) || "null");
+    if (saved && typeof saved.list === "string" && saved.list.trim()) {
+      byId("iceList").value = saved.list;
+      byId("turnUser").value = saved.user || "";
+    }
+    // TURN 密码是长期凭据：只留在本标签页的 sessionStorage；老版本写进过
+    // localStorage，这里顺手把它清掉。
+    if (saved && saved.pass) {
+      try {
+        localStorage.setItem(ICE_KEY, JSON.stringify({
+          list: byId("iceList").value,
+          user: byId("turnUser").value
+        }));
+      } catch (e) {}
+    }
+    byId("turnPass").value = sessionStorage.getItem(TURN_PASS_KEY) || "";
+    const clip = localStorage.getItem("mydesk.clip.v1");
+    if (clip !== null) {
+      S.clipSync = clip === "1";
+      byId("swClip").checked = S.clipSync;
+    }
+    const bridgeToken = localStorage.getItem("mydesk.bridgetoken.v1");
+    if (bridgeToken) {
+      S.bridge.token = bridgeToken;
+      byId("bridgeToken").value = bridgeToken;
+    }
+    const hide = localStorage.getItem("mydesk.hideCursor.v1");
+    if (hide !== null) {
+      S.hideCursor = hide === "1";
+      byId("swHideCursor").checked = S.hideCursor;
+    }
+    let codec = localStorage.getItem("mydesk.codec.v1");
+    if (codec === "vp8") codec = "auto";       // 兼容旧版本保存的值
+    const idx = CODEC_SLOTS.indexOf(codec);
+    if (idx >= 0) {
+      S.activeSlot = idx;
+      byId("codecPref").value = codec;
+    }
+  } catch (e) { /* 隐私模式下 localStorage 不可用 */ }
+}
+
+function saveIceConfig() {
+  try {
+    localStorage.setItem(ICE_KEY, JSON.stringify({
+      list: byId("iceList").value,
+      user: byId("turnUser").value
+    }));
+    sessionStorage.setItem(TURN_PASS_KEY, byId("turnPass").value);
+  } catch (e) {}
+}
+
+/**
+ * 用真实的 ICE 收集去探测一个 STUN 是否可用：
+ * 只有拿到 typ=srflx 候选才算通（host 候选是本机的，不算数）
+ */
+function probeStun(url, timeout = 4500) {
+  return new Promise((resolve) => {
+    const t0 = performance.now();
+    let done = false;
+    let pc;
+    try {
+      pc = new RTCPeerConnection({ iceServers: [{ urls: url }] });
+    } catch (e) {
+      resolve({ ok: false, reason: "创建失败" });
+      return;
+    }
+    const finish = (res) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { pc.close(); } catch (e) {}
+      resolve(res);
+    };
+    const timer = setTimeout(() => finish({ ok: false, reason: "超时" }), timeout);
+
+    pc.onicecandidate = (ev) => {
+      const c = ev.candidate;
+      if (!c || c.type !== "srflx") return;
+      finish({ ok: true, ms: Math.round(performance.now() - t0), ip: c.address });
+    };
+    pc.onicegatheringstatechange = () => {
+      if (pc.iceGatheringState === "complete") {
+        setTimeout(() => finish({ ok: false, reason: "无 srflx 候选" }), 120);
+      }
+    };
+    try {
+      pc.createDataChannel("probe");
+      pc.createOffer()
+        .then((o) => pc.setLocalDescription(o))
+        .catch(() => finish({ ok: false, reason: "Offer 失败" }));
+    } catch (e) {
+      finish({ ok: false, reason: "异常" });
+    }
+  });
+}
+
+async function probeAllIce() {
+  const box = byId("iceProbe");
+  const btn = byId("btnIceProbe");
+  const urls = parseIceUrls();
+  box.textContent = "";
+  if (!urls.length) { toast("ICE 列表是空的"); return; }
+
+  const rows = urls.map((u) => {
+    const row = document.createElement("div");
+    row.className = "probe-row";
+    const name = document.createElement("span");
+    name.className = "u";
+    name.textContent = u.replace(/^stuns?:/i, "");
+    const st = document.createElement("span");
+    st.className = "s wait";
+    st.textContent = "检测中…";
+    row.append(name, st);
+    box.appendChild(row);
+    return { u, st };
+  });
+
+  btn.disabled = true;
+  const results = await Promise.all(rows.map(async (r) => {
+    let res;
+    if (/^turns?:/i.test(r.u)) res = { ok: false, reason: "TURN 需实际连接", skip: true };
+    else res = await probeStun(r.u);
+    r.st.className = "s " + (res.ok ? "ok" : "bad");
+    r.st.textContent = res.ok ? res.ms + " ms" : (res.reason || "不可用");
+    return res;
+  }));
+  btn.disabled = false;
+
+  const okCount = results.filter((r) => r.ok).length;
+  const stunCount = results.filter((r) => !r.skip).length;
+  if (okCount) {
+    toast(`${okCount}/${stunCount} 个 STUN 可用`, "ok");
+    log(`STUN 探测：${okCount}/${stunCount} 可用`, "ok");
+  } else {
+    toast("没有一个 STUN 可用，跨网打洞大概率失败", "err", 4000);
+    log("STUN 探测：全部不可用", "err");
+  }
+}
+
+/** 统计 SDP 里各类 ICE 候选，用来判断是不是只有局域网可达 */
+function candidateStats(sdp) {
+  const out = { host: 0, srflx: 0, prflx: 0, relay: 0, total: 0 };
+  const re = /a=candidate:[^\r\n]*?\btyp\s+(host|srflx|prflx|relay)\b/g;
+  let m;
+  while ((m = re.exec(sdp || ""))) { out[m[1]] += 1; out.total += 1; }
+  return out;
+}
+
+function fmtCand(s) {
+  if (!s || !s.total) return "—";
+  const parts = [];
+  if (s.host) parts.push("host " + s.host);
+  if (s.srflx) parts.push("srflx " + s.srflx);
+  if (s.relay) parts.push("relay " + s.relay);
+  return parts.join(" · ") || ("共 " + s.total);
+}
+
+/** 按用户选择把编码排到 SDP 前面；浏览器不支持时保持自动并告警 */
+/** 把某条收发器的编码钉死：只调顺序、不删条目（保留 rtx/red/ulpfec） */
+function pinCodec(tx, codec) {
+  if (!tx || !codec) return false;
+  if (codec === "auto") return true;          // 交给浏览器自己协商，不设偏好
+  let caps = null;
+  try { caps = RTCRtpSender.getCapabilities("video"); } catch (e) { return false; }
+  if (!caps || !caps.codecs || !caps.codecs.length) return false;
+  const want = caps.codecs.filter((c) => c.mimeType.toLowerCase() === "video/" + codec);
+  if (!want.length) return false;
+  const rest = caps.codecs.filter((c) => !want.includes(c));
+  try {
+    tx.setCodecPreferences([...want, ...rest]);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/** 当前连接里所有视频收发器，按 mid 排序 = 槽位顺序 */
+function sortedVideoTransceivers() {
+  if (!S.pc) return [];
+  return S.pc.getTransceivers()
+    .filter((t) => t.receiver && t.receiver.track && t.receiver.track.kind === "video")
+    .sort((a, b) => {
+      const x = parseInt(a.mid, 10), y = parseInt(b.mid, 10);
+      if (Number.isNaN(x) || Number.isNaN(y)) return 0;
+      return x - y;
+    });
+}
+
+function slotOfTransceiver(tx) {
+  const i = sortedVideoTransceivers().indexOf(tx);
+  return i >= 0 ? i : 0;
+}
+
+function findAudioTx() {
+  if (!S.pc) return null;
+  return S.pc.getTransceivers().find(
+    (t) => t.receiver && t.receiver.track && t.receiver.track.kind === "audio"
+  ) || null;
+}
+
+/** 切换接收端当前显示的那条视频轨 */
+function setRemoteVideoTrack(track) {
+  if (!S.remoteStream) {
+    S.remoteStream = new MediaStream();
+    dom.remote.srcObject = S.remoteStream;
+  }
+  if (S.remoteVideoTrack && S.remoteVideoTrack !== track) {
+    try { S.remoteStream.removeTrack(S.remoteVideoTrack); } catch (e) {}
+  }
+  if (track && !S.remoteStream.getTrackById(track.id)) S.remoteStream.addTrack(track);
+  S.remoteVideoTrack = track;
+}
+
+/**
+ * 运行时切换编码：把本地轨道挪到目标槽位的收发器上。
+ * 所有槽位的 m-line 在建连时已经协商好了，所以这里不需要重新握手。
+ */
+async function setCodecSlot(i, notify = true) {
+  if (!Number.isInteger(i) || i < 0 || i >= CODEC_SLOTS.length) return;
+  S.activeSlot = i;
+  byId("codecPref").value = CODEC_SLOTS[i];
+  if (!S.pc || !S.videoTx.length) { render(); return; }
+
+  const track = S.localStream ? S.localStream.getVideoTracks()[0] || null : null;
+  // 先摘掉其它槽位，避免同一条轨道同时挂在多个 sender 上
+  for (let k = 0; k < S.videoTx.length; k++) {
+    if (k === i) continue;
+    try { await S.videoTx[k].sender.replaceTrack(null); } catch (e) {}
+  }
+  try { await S.videoTx[i].sender.replaceTrack(track); } catch (e) {
+    log("切换编码失败：" + e.message, "err");
+  }
+  if (notify && track) sendCtl({ t: "codec", i });
+  applyBitrate();
+  codecProbeKey = "";
+  refreshCodecInfo();
+  log("编码已切换到 " + codecLabel(i) + (track ? "" : "（共享后生效）"), "ok");
+}
+
+function txCodec(tx) {
+  if (!tx) return null;
+  try {
+    const p = tx.sender.getParameters();
+    if (p.codecs && p.codecs.length) return p.codecs[0];
+  } catch (e) {}
+  return null;
+}
+
+/** 正在接收就看对方用的槽位，否则看自己发送的槽位 */
+function activeCodecInfo() {
+  if (!S.pc || !S.videoTx.length) return null;
+  const receiving = !!(S.remoteVideoTrack && !S.remoteVideoTrack.muted);
+  const sending = !!(S.localStream && S.localStream.getVideoTracks().length);
+  const tx = S.videoTx[receiving ? S.remoteSlot : S.activeSlot];
+  const c = txCodec(tx);
+  if (!c) return null;
+  return { mime: c.mimeType, payloadType: c.payloadType, dir: receiving ? "↓ " : (sending ? "↑ " : "") };
+}
+
+let codecProbeKey = "";
+async function refreshCodecInfo() {
+  const c = activeCodecInfo();
+  const elC = byId("liveCodec"), elH = byId("liveHw");
+  if (!c) { elC.textContent = "—"; elH.textContent = "—"; return; }
+  const mime = c.mime;
+  if (elC) elC.textContent = c.dir + mime.replace("video/", "") + " · PT " + c.payloadType;
+  const key = mime + "|" + (c.payloadType || "");
+  if (key === codecProbeKey) return;
+  codecProbeKey = key;
+  try {
+    const info = await navigator.mediaCapabilities.decodingInfo({
+      type: "webrtc",
+      video: { contentType: mime, width: 1280, height: 720, bitrate: 3000000, framerate: 30 }
+    });
+    if (elH) elH.textContent = info.powerEfficient ? "硬件解码" : "软件解码";
+  } catch (e) {
+    if (elH) elH.textContent = "—";
+  }
+}
+
+function waitIce(pc, ms = 3500) {
+  if (pc.iceGatheringState === "complete") return Promise.resolve();
+  return new Promise((resolve) => {
+    let done = false;
+    const fin = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      pc.removeEventListener("icegatheringstatechange", onChange);
+      pc.removeEventListener("icecandidate", onCand);
+      resolve();
+    };
+    const onChange = () => { if (pc.iceGatheringState === "complete") fin(); };
+    const onCand = (ev) => { if (!ev.candidate) fin(); };
+    const timer = setTimeout(fin, ms);
+    pc.addEventListener("icegatheringstatechange", onChange);
+    pc.addEventListener("icecandidate", onCand);
+  });
+}
+
+function closePeer(silent) {
+  try {
+    if (S.dcCtl && S.dcCtl.readyState === "open" && !silent) {
+      try { S.dcCtl.send(JSON.stringify({ t: "bye" })); } catch (e) {}
+    }
+  } catch (e) {}
+  if (S.stats.timer) clearInterval(S.stats.timer);
+  if (S.stats.pingTimer) clearInterval(S.stats.pingTimer);
+  S.stats.timer = 0; S.stats.pingTimer = 0;
+  S.stats.lastIn = 0; S.stats.lastOut = 0; S.stats.lastTs = 0; S.stats.ping = null;
+  if (S.stats.pingSent) S.stats.pingSent.clear();
+
+  if (S.localStream) stopLocalStream(false);
+  if (S.bridge.ok) bridgeSend({ t: "release" });
+  if (S.pc) {
+    try { S.pc.close(); } catch (e) {}
+  }
+  S.pc = null; S.dcCtl = null; S.dcInput = null;
+  S.role = null;
+  S.remoteStream = null;
+  S.remoteAllows = false;
+  S.wantControl = false;
+  S.remoteSharing = null;
+  S.videoTx = [];
+  S.rxSlots = [];
+  S.remoteSlot = 0;
+  S.remoteVideoTrack = null;
+  S.remoteBridge = null;
+  S.warnedDc = false;
+  byId("swControl").checked = false;
+  // 注意：不要在这里清 S.allowControl / swAllow。
+  // 「允许对方控制我」是本机对外的长期授权（配置文件里也持久化），
+  // 每次重建连接就悄悄清掉，会让用户在毫无提示的情况下失去授权。
+  dom.remote.srcObject = null;
+  byId("btnSound").disabled = true;
+  byId("btnSound").title = "对方没有共享音频";
+  dom.btnDisconnect.disabled = true;
+  byId("liveStats").hidden = true;
+  byId("liveMode").textContent = "P2P 直连";
+  byId("permBanner").hidden = true;
+  deactivateControl(true);
+  releaseKeyboard();
+  render();
+}
+
+async function hostStart() {
+  byId("sigErr").textContent = "";
+  try {
+    closePeer(true);
+    const pc = buildPeer("host");
+    setPhase("host-offer");
+    byId("btnCopyOffer").disabled = true;
+    byId("hostOut").value = "";
+    byId("hostOut").placeholder = "正在收集网络候选…";
+    byId("hostIn").value = "";
+    setPill("生成邀请码…", "busy");
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await waitIce(pc, 3500);
+
+    S.candLocal = candidateStats(pc.localDescription.sdp);
+    const code = await packCode(pc.localDescription);
+    byId("hostOut").value = code;
+    byId("hostOut").placeholder = "";
+    byId("btnCopyOffer").disabled = false;
+    setPill("等待对方回执…", "busy");
+    log("邀请码已生成（" + code.length + " 字符），请发送给对方", "ok");
+    toast("邀请码已生成，发到对方设备打开的本页即可", "ok");
+  } catch (e) {
+    failSig(e);
+  }
+}
+
+async function guestMakeAnswer() {
+  byId("sigErr").textContent = "";
+  try {
+    const obj = await unpackCode(byId("guestIn").value);
+    if (obj.t !== "offer") throw new Error("这是一段回执码，请粘贴对方生成的邀请码");
+
+    closePeer(true);
+    byId("guestOut").value = "";
+    const pc = buildPeer("guest");
+    setPhase("guest-answer");
+    setPill("生成回执…", "busy");
+
+    await pc.setRemoteDescription({ type: "offer", sdp: obj.s });
+    S.candRemote = candidateStats(obj.s);
+    // 应答端：按 m-line 顺序拿到视频槽位，并把每条槽位固定到对应编码
+    S.videoTx = sortedVideoTransceivers();
+    S.videoTx.forEach((tx, i) => {
+      if (tx.direction === "recvonly") tx.direction = "sendrecv";
+      pinCodec(tx, CODEC_SLOTS[i]);
+    });
+    attachLocalAll();
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await waitIce(pc, 3500);
+
+    S.candLocal = candidateStats(pc.localDescription.sdp);
+    byId("guestOut").value = await packCode(pc.localDescription);
+    setPill("等待对方完成连接…", "busy");
+    log("回执码已生成，请发回给发起方", "ok");
+  } catch (e) {
+    failSig(e);
+  }
+}
+
+async function hostAcceptAnswer() {
+  byId("sigErr").textContent = "";
+  try {
+    if (!S.pc) throw new Error("连接已失效，请重新创建邀请码");
+    const obj = await unpackCode(byId("hostIn").value);
+    if (obj.t !== "answer") throw new Error("这是邀请码，请粘贴对方返回的回执码");
+    setPhase("connecting");
+    setPill("正在连接…", "busy");
+    await S.pc.setRemoteDescription({ type: "answer", sdp: obj.s });
+    S.candRemote = candidateStats(obj.s);
+    log("已收到回执，正在打洞…");
+  } catch (e) {
+    failSig(e);
+  }
+}
+
+function failSig(e) {
+  console.error(e);
+  const msg = (e && e.message) ? e.message : String(e);
+  byId("sigErr").textContent = "✕ " + msg;
+  log("握手失败：" + msg, "err");
+  setPill("握手中", "err");
+  if (!S.pc) setPhase("idle");
+}
+
+/* ============================================================
+   3.1 服务器模式信令（需要 http/https，页面由信令服务器托管时可用）
+   ============================================================ */
+const CAN_SERVER = location.protocol === "http:" || location.protocol === "https:";
+const SRV = { ws: null, code: "", pendingIce: [] };
+
+function wsUrl() {
+  return (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/ws";
+}
+
+function srvOpen() {
+  return new Promise((resolve, reject) => {
+    if (SRV.ws && SRV.ws.readyState === WebSocket.OPEN) { resolve(SRV.ws); return; }
+    let ws;
+    try { ws = new WebSocket(wsUrl()); } catch (e) { reject(new Error("无法创建信令连接")); return; }
+    SRV.ws = ws;
+    const timer = setTimeout(() => {
+      try { ws.close(); } catch (e) {}
+      reject(new Error("连接信令服务器超时"));
+    }, 8000);
+    ws.onopen = () => { clearTimeout(timer); log("信令服务器已连接", "ok"); resolve(ws); };
+    ws.onerror = () => { clearTimeout(timer); reject(new Error("无法连接信令服务器")); };
+    ws.onclose = () => {
+      clearTimeout(timer);
+      if (SRV.ws === ws) SRV.ws = null;
+      if (S.phase === "srv-room" || S.phase === "srv-connecting") {
+        log("信令连接已断开", "warn");
+      }
+    };
+    ws.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      onSignal(msg);
+    };
+  });
+}
+
+function srvSend(obj) {
+  if (SRV.ws && SRV.ws.readyState === WebSocket.OPEN) {
+    try { SRV.ws.send(JSON.stringify(obj)); } catch (e) { /* ignore */ }
+  }
+}
+
+function onSignal(msg) {
+  switch (msg.type) {
+    case "room":
+      SRV.code = msg.code;
+      byId("roomCode").textContent = msg.code;
+      // 放 fragment 而不是 query：fragment 不会发给服务器、不进反代访问日志、也不随 Referer 外泄
+      byId("roomLink").value = location.origin + location.pathname + "#room=" + msg.code;
+      setPhase("srv-room");
+      setPill("等待对方加入…", "busy");
+      log("房间已创建：" + msg.code, "ok");
+      render();
+      break;
+
+    case "joined":
+      SRV.code = msg.code;
+      setPhase("srv-connecting");
+      setPill("正在协商…", "busy");
+      log("已加入房间 " + msg.code + "，等待对方发起");
+      render();
+      break;
+
+    case "peer":
+      // 不再自动开始协商：房间号只是 6 位码，自动接受等于「猜到码就能看到屏幕」。
+      askPeerApprove();
+      break;
+
+    case "offer":
+      guestAnswerViaServer(msg.sdp);
+      break;
+
+    case "answer":
+      hostAcceptViaServer(msg.sdp);
+      break;
+
+    case "ice":
+      addRemoteIce(msg.candidate);
+      break;
+
+    case "peer-left":
+      toast("对方已离开房间");
+      log("对方已离开", "warn");
+      closePeer(true);
+      setPhase("idle");
+      setPill("未连接", "");
+      break;
+
+    case "error":
+      toast(msg.message || "信令错误", "err");
+      log("信令错误：" + (msg.message || ""), "err");
+      resetServer();
+      break;
+  }
+}
+
+/**
+ * 有人加入房间：先让主机点一次「允许」再发 offer。房间号只有 32^6 种，
+ * 没有这一步的话，猜到/撞到码的人可以在主机完全无感的情况下拿到画面。
+ */
+function askPeerApprove() {
+  if (S.peerAsking) return;
+  S.peerAsking = true;
+  byId("peerAsk").hidden = false;
+  setPill("有人在请求连接…", "busy");
+  log("有人加入了房间，等你确认是否允许连接", "warn");
+  toast("有人加入了房间，确认后才开始协商", "", 4500);
+  render();
+  clearTimeout(SRV.askTimer);
+  SRV.askTimer = setTimeout(() => {
+    if (!S.peerAsking) return;
+    log("45 秒内没有确认，已取消这次连接", "warn");
+    denyPeerApprove("超过 45 秒未确认，已取消这次连接");
+  }, 45000);
+}
+
+function clearPeerAsk() {
+  S.peerAsking = false;
+  clearTimeout(SRV.askTimer);
+  SRV.askTimer = 0;
+  byId("peerAsk").hidden = true;
+}
+
+function allowPeerApprove() {
+  if (!S.peerAsking) return;
+  clearPeerAsk();
+  log("已允许对方连接，开始协商");
+  hostOfferViaServer();
+}
+
+function denyPeerApprove(reason) {
+  clearPeerAsk();
+  try { srvSend({ type: "bye" }); } catch (e) { /* ignore */ }
+  log(reason || "已拒绝这次连接", "warn");
+  toast(reason || "已拒绝这次连接");
+  resetServer();
+}
+
+async function hostOfferViaServer() {
+  try {
+    closePeer(true);
+    const pc = buildPeer("host", true);
+    setPhase("srv-connecting");
+    setPill("正在协商…", "busy");
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    srvSend({ type: "offer", sdp: pc.localDescription.sdp });
+  } catch (e) {
+    failSig(e);
+  }
+}
+
+async function guestAnswerViaServer(sdp) {
+  try {
+    closePeer(true);
+    const pc = buildPeer("guest", true);
+    setPhase("srv-connecting");
+    setPill("正在协商…", "busy");
+    await pc.setRemoteDescription({ type: "offer", sdp });
+    S.candRemote = candidateStats(sdp);
+    S.videoTx = sortedVideoTransceivers();
+    S.videoTx.forEach((tx, i) => {
+      if (tx.direction === "recvonly") tx.direction = "sendrecv";
+      pinCodec(tx, CODEC_SLOTS[i]);
+    });
+    attachLocalAll();
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    srvSend({ type: "answer", sdp: pc.localDescription.sdp });
+    flushRemoteIce();
+  } catch (e) {
+    failSig(e);
+  }
+}
+
+async function hostAcceptViaServer(sdp) {
+  try {
+    if (!S.pc) throw new Error("连接已失效");
+    await S.pc.setRemoteDescription({ type: "answer", sdp });
+    S.candRemote = candidateStats(sdp);
+    flushRemoteIce();
+  } catch (e) {
+    failSig(e);
+  }
+}
+
+function addRemoteIce(candidate) {
+  if (!candidate) return;
+  if (!S.pc || !S.pc.remoteDescription) { SRV.pendingIce.push(candidate); return; }
+  S.pc.addIceCandidate(candidate).catch(() => {});
+}
+
+function flushRemoteIce() {
+  const list = SRV.pendingIce.splice(0);
+  for (const c of list) {
+    if (S.pc) S.pc.addIceCandidate(c).catch(() => {});
+  }
+}
+
+async function createRoom() {
+  const btn = byId("btnCreateRoom");
+  btn.disabled = true;
+  try {
+    await srvOpen();
+    srvSend({ type: "create" });
+  } catch (e) {
+    toast(e.message, "err");
+    log(e.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function joinRoom() {
+  const input = byId("joinCode");
+  const code = (input.value || "").trim().toUpperCase();
+  if (code.length !== 6) {
+    toast("请输入 6 位房间号");
+    input.focus();
+    return;
+  }
+  try {
+    setPill("加入房间…", "busy");
+    await srvOpen();
+    srvSend({ type: "join", code });
+  } catch (e) {
+    toast(e.message, "err");
+    log(e.message, "err");
+    setPill("未连接", "");
+  }
+}
+
+function resetServer() {
+  clearPeerAsk();
+  SRV.pendingIce = [];
+  SRV.code = "";
+  if (SRV.ws) {
+    try { SRV.ws.close(); } catch (e) { /* ignore */ }
+    SRV.ws = null;
+  }
+  closePeer(true);
+  setPhase("idle");
+  setPill("未连接", "");
+  render();
+}
+
+function setMode(mode) {
+  if (mode === "server" && !CAN_SERVER) mode = "manual";
+  S.mode = mode;
+  for (const b of byId("modeSeg").children) {
+    b.classList.toggle("on", b.dataset.mode === mode);
+  }
+  byId("srvBox").classList.toggle("hidden", mode !== "server");
+  byId("manualBox").classList.toggle("hidden", mode === "server");
+  render();
+}
+
+/* ============================================================
+   4. WebRTC 对等体
+   ============================================================ */
+function buildPeer(role, trickle) {
+  const pc = new RTCPeerConnection({
+    iceServers: iceServers(),
+    bundlePolicy: "max-bundle",
+    rtcpMuxPolicy: "require",
+    iceCandidatePoolSize: 2
+  });
+  S.pc = pc;
+  S.role = role;
+
+  if (role === "host") {
+    S.videoTx = [];
+    for (const codec of CODEC_SLOTS) {
+      const tx = pc.addTransceiver("video", { direction: "sendrecv" });
+      pinCodec(tx, codec);
+      S.videoTx.push(tx);
+    }
+    pc.addTransceiver("audio", { direction: "sendrecv" });
+    bindChannel(pc.createDataChannel("ctl", { ordered: true }));
+    bindChannel(pc.createDataChannel("in", { ordered: false, maxRetransmits: 0 }));
+    // 允许「先共享、后建连」：若已有本地流，直接挂到当前编码槽
+    attachLocalAll();
+  }
+
+  pc.ondatachannel = (ev) => bindChannel(ev.channel);
+
+  pc.ontrack = (ev) => {
+    const track = ev.track;
+    if (!S.remoteStream) {
+      S.remoteStream = new MediaStream();
+      dom.remote.srcObject = S.remoteStream;
+    }
+    if (track.kind === "video") {
+      // 每个槽位一条轨道，只有对方正在用的那条才会出图
+      const slot = slotOfTransceiver(ev.transceiver);
+      S.rxSlots[slot] = track;
+      track.addEventListener("unmute", () => { S.remoteSharing = true; updateStageOverlay(); });
+      track.addEventListener("mute", () => { if (S.remoteSlot === slot) updateStageOverlay(); });
+      track.addEventListener("ended", updateStageOverlay);
+      if (slot === S.remoteSlot) setRemoteVideoTrack(track);
+      log("收到对方视频流（槽位 " + slot + " · " + CODEC_SLOTS[slot].toUpperCase() + "）");
+    } else {
+      // 音频轨即使没有数据也会存在（muted）。只有真的收到声音才让按钮可用。
+      const snd = byId("btnSound");
+      snd.disabled = track.muted;
+      if (!track.muted) snd.title = "声音开关";
+      track.addEventListener("unmute", () => { snd.disabled = false; snd.title = "声音开关"; });
+      track.addEventListener("mute", () => { snd.disabled = true; snd.title = "对方没有共享音频"; });
+      if (!S.remoteStream.getTrackById(track.id)) S.remoteStream.addTrack(track);
+      if (ev.streams && ev.streams[0]) {
+        for (const t of ev.streams[0].getTracks()) {
+          if (t.kind !== "video" && !S.remoteStream.getTrackById(t.id)) S.remoteStream.addTrack(t);
+        }
+      }
+    }
+    updateStageOverlay();
+  };
+
+  pc.onconnectionstatechange = () => {
+    const st = pc.connectionState;
+    log("连接状态：" + st);
+    if (st === "connected") onConnected();
+    if (st === "failed") {
+      setPill("连接失败", "err");
+      byId("iceAdv").open = true;
+      byId("sigErr").textContent =
+        "✕ P2P 打洞失败。先点开「高级：自定义 STUN / TURN」→「检测可用性」，确认 STUN 是否可达；" +
+        "仍失败可换网络/开热点，或填 TURN、用 EasyTier 组网（见下方「网络救急」）。";
+      log("ICE 打洞失败，可能双方均为对称型 NAT", "err");
+    }
+    if (st === "disconnected") {
+      setPill("连接中断", "busy");
+    }
+    if (st === "closed") {
+      if (S.phase === "live") { setPhase("idle"); setPill("已断开", ""); }
+    }
+  };
+
+  pc.oniceconnectionstatechange = () => log("ICE：" + pc.iceConnectionState);
+
+  pc.onicecandidateerror = (ev) => {
+    if (ev && ev.errorCode >= 400) {
+      log("STUN 服务器不可用（" + ev.url + "），已跳过", "warn");
+    }
+  };
+
+  if (trickle) {
+    // 服务器模式：边收集边发送候选
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate) srvSend({ type: "ice", candidate: ev.candidate.toJSON() });
+    };
+    pc.onicegatheringstatechange = () => {
+      if (pc.iceGatheringState !== "complete") return;
+      S.candLocal = candidateStats(pc.localDescription && pc.localDescription.sdp);
+      if (pc.remoteDescription) S.candRemote = candidateStats(pc.remoteDescription.sdp);
+      render();
+    };
+  }
+
+  return pc;
+}
+
+function bindChannel(ch) {
+  if (!ch) return;
+  ch.binaryType = "arraybuffer";
+  if (ch.label === "ctl") {
+    S.dcCtl = ch;
+    ch.onopen = () => {
+      log("控制通道已建立", "ok");
+      sendCtl({
+        t: "hello",
+        name: navigator.platform || "web",
+        ua: navigator.userAgent.slice(0, 80),
+        allow: S.allowControl
+      });
+      render();
+      maybeLive();
+    };
+    ch.onmessage = (ev) => onCtlMessage(ev.data);
+  } else if (ch.label === "in") {
+    S.dcInput = ch;
+    ch.onopen = () => { log("输入通道已建立", "ok"); render(); maybeLive(); };
+    ch.onmessage = (ev) => onInputMessage(ev.data);
+  }
+  ch.onclose = () => {
+    log("通道关闭：" + ch.label, "warn");
+    render();
+  };
+  ch.onerror = () => log("通道错误：" + ch.label, "err");
+}
+
+function maybeLive() {
+  if (!S.pc) return;
+  const ok = S.pc.connectionState === "connected" &&
+    S.dcCtl && S.dcCtl.readyState === "open" &&
+    S.dcInput && S.dcInput.readyState === "open";
+  if (ok && S.phase !== "live") onConnected();
+}
+
+function onConnected() {
+  if (S.phase === "live") {
+    // ICE 抖动后恢复：别让界面停在“连接中断”，并把权限/编码/桥接状态重新同步一次
+    setPill("已连接 · P2P", "on");
+    S.warnedDc = false;
+    sendCtl({ t: "perm", allow: S.allowControl });
+    sendCtl({ t: "codec", i: S.activeSlot });
+    reportBridgeState();
+    log("连接已恢复，状态已重新同步", "ok");
+    return;
+  }
+  setPhase("live");
+  setPill("已连接 · P2P", "on");
+  log("P2P 直连已建立", "ok");
+  log("候选 · 本机 " + fmtCand(S.candLocal) + " ｜ 对方 " + fmtCand(S.candRemote));
+  const cl = S.candLocal, cr = S.candRemote;
+  const onlyLan = cl && cr && (cl.srflx + cl.relay === 0) && (cr.srflx + cr.relay === 0);
+  if (onlyLan) log("双方都只有局域网候选：跨网络连接会失败", "warn");
+  toast("连接成功，可以共享屏幕了", "ok", 2200);
+  startStats();
+  applyBitrate();
+  codecProbeKey = "";
+  refreshCodecInfo();
+  sendCtl({ t: "perm", allow: S.allowControl });
+  sendCtl({ t: "codec", i: S.activeSlot });
+  reportBridgeState();
+}
+
+function sendCtl(obj) {
+  if (S.dcCtl && S.dcCtl.readyState === "open") {
+    try { S.dcCtl.send(JSON.stringify(obj)); } catch (e) {}
+  }
+}
+
+async function onCtlMessage(data) {
+  let m;
+  try { m = JSON.parse(data); } catch (e) { return; }
+  switch (m.t) {
+    case "hello":
+      log("对方已就绪：" + (m.name || "未知设备"));
+      sendCtl({ t: "perm", allow: S.allowControl });
+      break;
+    case "perm":
+      S.remoteAllows = !!m.allow;
+      if (!m.allow && S.wantControl) {
+        S.wantControl = false;
+        byId("swControl").checked = false;
+        deactivateControl(true);          // 连键盘锁一起放掉，别让 Esc 死锁
+        toast("对方收回了控制权限，已停止发送键鼠");
+      }
+      render();
+      break;
+    case "ask":
+      byId("permBanner").hidden = false;
+      toast("对方请求控制你的电脑", "", 4000);
+      log("收到控制请求", "warn");
+      break;
+    case "clip-req": {
+      // 读系统剪贴板必须建立在「我已授权对方控制」之上：否则任何连上来的对端
+      // 一条消息就能把剪贴板全文取走（密码、验证码、私钥片段都在里面）。
+      if (!S.clipSync) { sendCtl({ t: "clip-fail", error: "对方关闭了剪贴板同步" }); break; }
+      if (!S.allowControl) { sendCtl({ t: "clip-fail", error: "未授权控制，剪贴板不可读" }); break; }
+      const text = await bridgeClipboardGet();
+      if (text === null) sendCtl({ t: "clip-fail", error: "本机桥接未连接" });
+      else sendCtl({ t: "clip-data", text });
+      break;
+    }
+    case "clip-set":
+      // 只有授权过的控制端才能改写本机剪贴板。
+      if (S.clipSync && S.allowControl) await bridgeClipboardSet(String(m.text || ""));
+      break;
+    case "clip-data":
+      // 只接受「我自己请求过」的回复，避免对端随手把本机剪贴板换成它想要的内容。
+      if (S.clipSync && S.clipPending > 0) {
+        S.clipPending -= 1;
+        await writeLocalClipboard(String(m.text || ""));
+      }
+      break;
+    case "clip-fail":
+      if (S.wantControl) toast("对方剪贴板不可用：" + (m.error || ""), "err", 3000);
+      break;
+    case "bridge":
+      S.remoteBridge = !!m.ok;
+      if (!m.ok && S.wantControl) toast("对方本机桥接未连接，键鼠不会生效", "err", 4000);
+      render();
+      break;
+    case "codec": {
+      const i = Number(m.i) | 0;
+      if (i < 0 || i >= CODEC_SLOTS.length) break;
+      S.remoteSlot = i;
+      const t = S.rxSlots[i];
+      if (t) setRemoteVideoTrack(t);
+      updateStageOverlay();
+      log("对方切换编码：" + codecLabel(i));
+      break;
+    }
+    case "share":
+      S.remoteSharing = !!m.on;
+      log(S.remoteSharing ? "对方开始共享屏幕" : "对方停止了共享");
+      updateStageOverlay();
+      break;
+    case "ping":
+      // 只回传 id：两端 performance.now() 的时间原点不同，不能直接用对方的时间戳相减
+      sendCtl({ t: "pong", id: m.id });
+      break;
+    case "pong": {
+      const t0 = S.stats.pingSent.get(m.id);
+      if (t0 != null) {
+        S.stats.ping = Math.round(performance.now() - t0);
+        S.stats.pingSent.delete(m.id);
+        if (S.stats.pingSent.size > 12) S.stats.pingSent.clear();
+      }
+      break;
+    }
+    case "bye":
+      toast("对方已断开连接");
+      log("对方主动断开", "warn");
+      closePeer(true);
+      setPhase("idle");
+      setPill("未连接", "");
+      break;
+  }
+}
+
+/* ============================================================
+   5. 媒体：共享 / 测试画面
+   ============================================================ */
+async function getScreenStream(withAudio = true) {
+  const constraints = {
+    video: {
+      frameRate: { ideal: 30, max: 60 },
+      width: { ideal: 2560, max: 2560 },
+      height: { ideal: 1440, max: 1440 }
+    },
+    audio: withAudio
+      ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      : false,
+    selfBrowserSurface: "exclude",
+    surfaceSwitching: "include",
+    systemAudio: "include",
+    preferCurrentTab: false
+  };
+  try {
+    return await navigator.mediaDevices.getDisplayMedia(constraints);
+  } catch (err) {
+    if (withAudio && err && /audio|NotSupported|TypeError/i.test(err.name + err.message)) {
+      return getScreenStream(false);
+    }
+    throw err;
+  }
+}
+
+function makeTestStream() {
+  const c = document.createElement("canvas");
+  c.width = 1600; c.height = 900;
+  const ctx = c.getContext("2d");
+  const t0 = performance.now();
+  const dots = Array.from({ length: 26 }, (_, i) => ({
+    x: Math.random() * c.width,
+    y: Math.random() * c.height,
+    r: 1 + Math.random() * 2.2,
+    vx: (Math.random() - .5) * 26,
+    vy: (Math.random() - .5) * 26,
+    a: .12 + Math.random() * .4
+  }));
+  let last = performance.now();
+
+  const draw = (ts) => {
+    const dt = Math.min(64, ts - last) / 1000;
+    last = ts;
+    const t = (performance.now() - t0) / 1000;
+
+    const g = ctx.createLinearGradient(0, 0, c.width, c.height);
+    g.addColorStop(0, "#0a1120");
+    g.addColorStop(.55, "#0d1830");
+    g.addColorStop(1, "#0a1a1c");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, c.width, c.height);
+
+    ctx.strokeStyle = "rgba(120,160,255,.10)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < c.width; x += 80) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, c.height); ctx.stroke();
+    }
+    for (let y = 0; y < c.height; y += 80) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(c.width, y); ctx.stroke();
+    }
+
+    for (const d of dots) {
+      d.x += d.vx * dt; d.y += d.vy * dt;
+      if (d.x < 0 || d.x > c.width) d.vx *= -1;
+      if (d.y < 0 || d.y > c.height) d.vy *= -1;
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(110,200,255,${d.a})`;
+      ctx.fill();
+    }
+
+    const cx = c.width / 2 + Math.cos(t * .7) * 210;
+    const cy = c.height / 2 + Math.sin(t * 1.1) * 120;
+    const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 260);
+    rg.addColorStop(0, "rgba(90,200,255,.30)");
+    rg.addColorStop(1, "rgba(90,200,255,0)");
+    ctx.fillStyle = rg;
+    ctx.beginPath(); ctx.arc(cx, cy, 260, 0, Math.PI * 2); ctx.fill();
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#e9f1ff";
+    ctx.font = "600 76px system-ui, sans-serif";
+    ctx.fillText(new Date().toLocaleTimeString("zh-CN", { hour12: false }), c.width / 2, c.height / 2 + 26);
+
+    ctx.font = "500 22px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(150,200,255,.75)";
+    ctx.fillText("MyDesk · 测试画面 TEST PATTERN", c.width / 2, c.height / 2 + 78);
+    ctx.font = "400 17px ui-monospace, monospace";
+    ctx.fillStyle = "rgba(140,170,220,.5)";
+    ctx.fillText("1600 × 900 · 30 fps · canvas.captureStream()", c.width / 2, c.height / 2 + 112);
+
+    ctx.textAlign = "left";
+    ctx.font = "600 18px ui-monospace, monospace";
+    ctx.fillStyle = "rgba(140,220,255,.55)";
+    ctx.fillText("LIVE", 44, 60);
+    ctx.beginPath();
+    ctx.arc(112, 54, 6 + (Math.sin(t * 4) + 1) * 2, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(80,230,180,.9)";
+    ctx.fill();
+
+  };
+  // 用定时器而非 rAF：页面切到后台时 rAF 会停摆，定时器仍能维持画面
+  draw(performance.now());
+  const stream = c.captureStream(30);
+  stream.__test = true;
+  stream.__draw = draw;
+  return stream;
+}
+
+/** 定时器必须在 setLocalStream 之后启动：它会先清理上一条流（含旧定时器） */
+function startTestLoop(stream) {
+  if (!stream || !stream.__draw) return;
+  if (S.testTimer) clearInterval(S.testTimer);
+  S.testTimer = setInterval(() => stream.__draw(performance.now()), 33);
+}
+
+async function shareScreen() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    toast("当前浏览器不支持屏幕共享（需要 Chrome/Edge/Firefox 最新版）", "err");
+    return;
+  }
+  try {
+    const stream = await getScreenStream(true);
+    setLocalStream(stream, "屏幕共享");
+  } catch (e) {
+    if (e && (e.name === "NotAllowedError" || e.name === "AbortError")) {
+      toast("已取消共享");
+      log("用户取消了屏幕共享", "warn");
+    } else if (e && e.name === "SecurityError") {
+      toast("此页面被浏览器判定为不安全上下文，无法调用屏幕共享", "err");
+      log("getDisplayMedia 被安全策略拦截：" + e.message, "err");
+    } else {
+      console.error(e);
+      toast("共享失败：" + (e.message || e), "err");
+      log("共享失败：" + (e.message || e), "err");
+    }
+  }
+}
+
+function shareTest() {
+  try {
+    const stream = makeTestStream();
+    setLocalStream(stream, "测试画面");
+    startTestLoop(stream);
+    toast("已共享测试画面（无需屏幕权限）", "ok");
+  } catch (e) {
+    console.error(e);
+    toast("测试画面启动失败：" + e.message, "err");
+  }
+}
+
+function setLocalStream(stream, label) {
+  S.replacingStream = true;      // 平滑替换：不要向对方广播“停止共享”
+  stopLocalStream(true);
+  S.replacingStream = false;
+  S.localStream = stream;
+  S.sharing = true;
+  const v = byId("preview");
+  v.srcObject = stream;
+  v.play().catch(() => {});
+  byId("previewEmpty").classList.add("hidden");
+  byId("previewTag").classList.remove("hidden");
+  byId("previewTag").textContent = label;
+  byId("shareTag").classList.remove("hidden");
+  byId("btnShare").classList.add("hidden");
+  byId("btnTestShare").classList.add("hidden");
+  byId("btnStopShare").classList.remove("hidden");
+
+  const vt = stream.getVideoTracks()[0];
+  if (vt) {
+    try { vt.contentHint = "detail"; } catch (e) {}
+    vt.addEventListener("ended", () => {
+      log("共享源已结束", "warn");
+      stopLocalStream(true);
+    });
+  }
+  attachLocalAll();
+  applyBitrate();
+  sendCtl({ t: "share", on: true });
+  sendCtl({ t: "codec", i: S.activeSlot });
+  log("开始共享：" + label, "ok");
+}
+
+function stopLocalStream(keepPc) {
+  if (S.testTimer) { clearInterval(S.testTimer); S.testTimer = 0; }
+  if (S.localStream) {
+    for (const t of S.localStream.getTracks()) { try { t.stop(); } catch (e) {} }
+    S.localStream = null;
+  }
+  S.sharing = false;
+  const v = byId("preview");
+  v.srcObject = null;
+  byId("previewEmpty").classList.remove("hidden");
+  byId("previewTag").classList.add("hidden");
+  byId("shareTag").classList.add("hidden");
+  byId("btnShare").classList.remove("hidden");
+  byId("btnTestShare").classList.remove("hidden");
+  byId("btnStopShare").classList.add("hidden");
+  if (keepPc) attachLocalAll();
+  if (!S.replacingStream) sendCtl({ t: "share", on: false });
+}
+
+/** 把本地轨道挂到「当前编码槽」的收发器上（无需重新协商） */
+function attachLocalAll() {
+  if (!S.pc) return;
+  const v = S.localStream ? S.localStream.getVideoTracks()[0] || null : null;
+  const a = S.localStream ? S.localStream.getAudioTracks()[0] || null : null;
+  S.videoTx.forEach((tx, i) => {
+    tx.direction = "sendrecv";
+    const want = i === S.activeSlot ? v : null;
+    tx.sender.replaceTrack(want).catch((e) => log("视频轨道挂载失败：" + e.message, "err"));
+  });
+  const ta = findAudioTx();
+  if (ta) {
+    ta.direction = "sendrecv";
+    ta.sender.replaceTrack(a).catch((e) => log("音频轨道挂载失败：" + e.message, "err"));
+  }
+}
+
+async function applyBitrate() {
+  if (!S.pc) return;
+  const mbps = Number(byId("quality").value);
+  const bps = Math.round(mbps * 1e6);           // 注意：WebRTC 的 maxBitrate 单位是 bit/s
+  const tv = S.videoTx[S.activeSlot];
+  if (!tv) return;
+  try {
+    const params = tv.sender.getParameters();
+    // encodings 为空表示尚未协商出编码器；此时伪造 encodings 会破坏编码配置（实测掉到 1fps）
+    if (!params.encodings || !params.encodings.length) return;
+    if (params.encodings[0].maxBitrate === bps) return;
+    params.encodings[0].maxBitrate = bps;
+    await tv.sender.setParameters(params);
+    log("码率上限已设为 " + mbps + " Mbps");
+  } catch (e) { /* 协商未完成时忽略 */ }
+}
+
+/* ============================================================
+   6. 统计
+   ============================================================ */
+function startStats() {
+  if (S.stats.timer) clearInterval(S.stats.timer);
+  if (S.stats.pingTimer) clearInterval(S.stats.pingTimer);
+  S.stats.lastIn = 0; S.stats.lastOut = 0; S.stats.lastTs = 0;
+  S.stats.lastInFrames = 0; S.stats.lastOutFrames = 0;
+
+  S.stats.timer = setInterval(async () => {
+    if (!S.pc) return;
+    let inBytes = 0, outBytes = 0, inFrames = 0, outFrames = 0, rtt = null;
+    const activeTx = S.videoTx[S.activeSlot];
+    const activeMid = activeTx && activeTx.mid != null ? String(activeTx.mid) : null;
+    try {
+      const report = await S.pc.getStats();
+      report.forEach((r) => {
+        const onActive = !activeMid || r.mid === activeMid;
+        if (r.type === "inbound-rtp" && r.kind === "video" && onActive) {
+          inBytes = r.bytesReceived || 0;
+          inFrames = r.framesDecoded || 0;
+        }
+        if (r.type === "outbound-rtp" && r.kind === "video" && onActive) {
+          outBytes = r.bytesSent || 0;
+          outFrames = r.framesEncoded || 0;
+        }
+        if (r.type === "candidate-pair" && r.state === "succeeded" && (r.nominated || r.nominateable)) {
+          if (typeof r.currentRoundTripTime === "number") rtt = r.currentRoundTripTime * 1000;
+        }
+      });
+    } catch (e) { return; }
+
+    const now = performance.now();
+    const dt = S.stats.lastTs ? (now - S.stats.lastTs) / 1000 : 0;
+    let inBps = 0, outBps = 0, inFps = 0, outFps = 0;
+    if (dt > 0.3 && S.stats.lastTs) {
+      inBps = Math.max(0, (inBytes - S.stats.lastIn) * 8 / dt);
+      outBps = Math.max(0, (outBytes - S.stats.lastOut) * 8 / dt);
+      inFps = Math.max(0, (inFrames - S.stats.lastInFrames) / dt);
+      outFps = Math.max(0, (outFrames - S.stats.lastOutFrames) / dt);
+    }
+    S.stats.lastIn = inBytes; S.stats.lastOut = outBytes; S.stats.lastTs = now;
+    S.stats.lastInFrames = inFrames; S.stats.lastOutFrames = outFrames;
+
+    // 只在接收时显示接收指标；仅发送时显示发送指标（前面加 ↑ 区分）
+    const rv = remoteVisible();
+    const w = dom.remote.videoWidth, h = dom.remote.videoHeight;
+    const lt = S.localStream ? S.localStream.getVideoTracks()[0] : null;
+    let ls = null;
+    try { ls = lt ? lt.getSettings() : null; } catch (e) {}
+    const lw = (ls && ls.width) || byId("preview").videoWidth || 0;
+    const lh = (ls && ls.height) || byId("preview").videoHeight || 0;
+
+    if (rv && w && h) {
+      byId("hRes").textContent = w + "×" + h;
+      byId("hFps").textContent = inFps > 0.5 ? inFps.toFixed(0) + " fps" : "—";
+      byId("hBr").textContent = inBps > 1000 ? (inBps / 1e6).toFixed(1) + " Mbps" : "—";
+    } else if (S.sharing) {
+      byId("hRes").textContent = lw ? "↑ " + lw + "×" + lh : "共享中";
+      byId("hFps").textContent = outFps > 0.5 ? outFps.toFixed(0) + " fps" : "—";
+      byId("hBr").textContent = outBps > 1000 ? (outBps / 1e6).toFixed(1) + " Mbps" : "—";
+    } else {
+      byId("hRes").textContent = "—";
+      byId("hFps").textContent = "—";
+      byId("hBr").textContent = "—";
+    }
+    const lat = S.stats.ping != null ? S.stats.ping : (rtt != null ? Math.round(rtt) : null);
+    byId("hRtt").textContent = lat == null ? "—" : (lat <= 0 ? "<1 ms" : lat + " ms");
+
+    refreshCodecInfo();
+    // 数据通道（不是媒体）断了的话键鼠会静默失效，得让人知道
+    if (!S.warnedDc && S.dcInput && S.dcInput.readyState === "closed") {
+      S.warnedDc = true;
+      log("数据通道已断开：需要重新握手才能恢复控制", "err");
+      toast("数据通道已断开，控制不可用；请断开后重新连接", "err", 5000);
+    }
+    // 画面尺寸变化时刷新遮挡层
+    updateStageOverlay();
+  }, 1000);
+
+  S.stats.pingTimer = setInterval(() => {
+    if (!S.dcCtl || S.dcCtl.readyState !== "open") return;
+    const id = ++S.stats.pingId;
+    S.stats.pingSent.set(id, performance.now());
+    sendCtl({ t: "ping", id });
+  }, 2500);
+}
+
+/* ============================================================
+   7. 输入：控制端采集
+   ============================================================ */
+function contentRect(video) {
+  const vw = video.videoWidth || 16;
+  const vh = video.videoHeight || 9;
+  const r = video.getBoundingClientRect();
+  const scale = Math.min(r.width / vw, r.height / vh);
+  const w = vw * scale, h = vh * scale;
+  return {
+    left: r.left + (r.width - w) / 2,
+    top: r.top + (r.height - h) / 2,
+    width: w || 1,
+    height: h || 1
+  };
+}
+
+function canSendInput() {
+  return S.phase === "live" && S.wantControl && S.remoteAllows && S.input.active &&
+    S.dcInput && S.dcInput.readyState === "open";
+}
+
+function sendInput(obj) {
+  if (S.dcInput && S.dcInput.readyState === "open") {
+    try { S.dcInput.send(JSON.stringify(obj)); } catch (e) {}
+  }
+}
+
+function normPoint(ev) {
+  const r = contentRect(dom.remote);
+  return {
+    x: +clamp((ev.clientX - r.left) / r.width, 0, 1).toFixed(4),
+    y: +clamp((ev.clientY - r.top) / r.height, 0, 1).toFixed(4)
+  };
+}
+
+function flushMove() {
+  S.input.raf = 0;
+  const p = S.input.pending;
+  S.input.pending = null;
+  if (!p) return;
+  sendInput({ t: "m", x: p.x, y: p.y, b: p.b });
+}
+
+function queueMove(ev) {
+  const p = normPoint(ev);
+  S.input.pending = { x: p.x, y: p.y, b: ev.buttons | 0 };
+  if (!S.input.raf) S.input.raf = requestAnimationFrame(flushMove);
+}
+
+function modsOf(ev) {
+  return (ev.ctrlKey ? 1 : 0) | (ev.shiftKey ? 2 : 0) | (ev.altKey ? 4 : 0) | (ev.metaKey ? 8 : 0);
+}
+
+/** Esc 释放后要按下的键还留在对方那儿，这里补发 keyup */
+function releaseKeyboard() {
+  if (S.input.held.size && S.dcInput && S.dcInput.readyState === "open") {
+    for (const code of S.input.held) {
+      sendInput({ t: "k", d: "up", key: "", code, mods: 0 });
+    }
+  }
+  S.input.held.clear();
+}
+
+/** 键盘锁定：接管后浏览器快捷键（Ctrl+W / Ctrl+T / F11 …）交给页面而不是本机 */
+async function lockLocalKeyboard() {
+  if (!navigator.keyboard || !navigator.keyboard.lock) return false;
+  try { await navigator.keyboard.lock(); return true; } catch (e) { return false; }
+}
+
+function unlockLocalKeyboard() {
+  try { if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock(); } catch (e) {}
+}
+
+async function activateControl() {
+  if (S.input.active) return;
+  S.input.active = true;
+  updateStageOverlay();
+  const locked = await lockLocalKeyboard();
+  S.input.keyLock = locked;
+  log(locked ? "键盘已锁定，浏览器快捷键改发往远端" : "键盘锁定不可用：部分浏览器快捷键仍会作用于本机",
+      locked ? "ok" : "warn");
+  toast(locked ? "键鼠已接管 · Esc 释放" : "键鼠已接管（快捷键锁定不可用）", locked ? "ok" : "", 2000);
+}
+
+function deactivateControl(silent) {
+  if (!S.input.active) return;
+  releaseKeyboard();
+  S.input.active = false;
+  S.input.keyLock = false;
+  unlockLocalKeyboard();
+  updateStageOverlay();
+  if (!silent) toast("已释放键鼠 · 点击画面继续");
+}
+
+/**
+ * 少数组合会让浏览器/系统抢走，preventDefault 也拦不住；
+ * 没有键盘锁定时只能放行，免得把它们吞掉却什么也没发出去。
+ */
+function isReservedByBrowser(ev) {
+  const code = ev.code;
+  if (code === "F11" || code === "F12") return true;
+  const mod = ev.ctrlKey || ev.metaKey;
+  if (!mod) return false;
+  if (code === "KeyW" || code === "KeyT" || code === "KeyN") return true;
+  if (ev.shiftKey && (code === "KeyI" || code === "KeyJ" || code === "KeyC")) return true;
+  return false;
+}
+
+function onKeyDown(ev) {
+  // Esc 释放必须排在最前面：既不能在对方收回权限后失效（canSendInput 会变 false），
+  // 也不能被输入框焦点挡住，否则键盘锁会卡在「已接管」，只有窗口失焦能救。
+  if (S.input.active && ev.code === "Escape") {
+    ev.preventDefault();
+    ev.stopPropagation();
+    deactivateControl();
+    return;
+  }
+  if (!S.input.active || !canSendInput()) return;
+  const ae = document.activeElement;
+  if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+  if (isReservedByBrowser(ev) && !S.input.keyLock) return;
+
+  // Ctrl+V：先同步剪贴板再发按键
+  if (S.clipSync && (ev.ctrlKey || ev.metaKey) && !ev.altKey && !ev.shiftKey && ev.code === "KeyV") {
+    ev.preventDefault();
+    ev.stopPropagation();
+    smartPaste(modsOf(ev));
+    return;
+  }
+  ev.preventDefault();
+  ev.stopPropagation();
+  if (ev.repeat) return;
+  S.input.held.add(ev.code);
+  sendInput({ t: "k", d: "down", key: ev.key, code: ev.code, mods: modsOf(ev) });
+  // Ctrl+C / Ctrl+X：等对端应用处理完，再把它的剪贴板拉回来
+  if (S.clipSync && (ev.ctrlKey || ev.metaKey) && (ev.code === "KeyC" || ev.code === "KeyX")) {
+    setTimeout(() => {
+      S.clipPending = Math.min((S.clipPending || 0) + 1, 4);
+      sendCtl({ t: "clip-req" });
+    }, 260);
+  }
+}
+
+function onKeyUp(ev) {
+  if (!S.input.active) return;
+  if (isReservedByBrowser(ev) && !S.input.keyLock) return;
+  const ae = document.activeElement;
+  if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  S.input.held.delete(ev.code);
+  sendInput({ t: "k", d: "up", key: ev.key, code: ev.code, mods: modsOf(ev) });
+}
+
+/* ============================================================
+   8. 输入：被控端落地
+   ============================================================ */
+const ghost = byId("ghost");
+let ghostRaf = 0;
+
+function flashGhost(ev) {
+  if (typeof ev.x === "number") {
+    ghost.style.left = (ev.x * 100).toFixed(2) + "%";
+    ghost.style.top = (ev.y * 100).toFixed(2) + "%";
+    ghost.classList.add("show");
+    clearTimeout(ghostRaf);
+    ghostRaf = setTimeout(() => ghost.classList.remove("show"), 1400);
+  }
+  if (ev.t === "mb" && ev.d === 1) {
+    ghost.classList.remove("click");
+    void ghost.offsetWidth;
+    ghost.classList.add("click");
+  }
+}
+
+function onInputMessage(raw) {
+  if (typeof raw !== "string") return;
+  let ev;
+  try { ev = JSON.parse(raw); } catch (e) { return; }
+  if (!S.allowControl) return;          // 未授权：直接丢弃
+  flashGhost(ev);
+  bridgeSend(ev);
+}
+
+/** 读被控端的系统剪贴板（经本机桥接），失败返回 null */
+async function bridgeClipboardGet() {
+  if (!S.bridge.ok) return null;
+  try {
+    const res = await fetch(S.bridge.url.replace(/\/+$/, "") + "/clipboard", { cache: "no-store", headers: bridgeHeaders() });
+    const info = await res.json();
+    return info && info.ok ? String(info.text || "") : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** 写被控端的系统剪贴板 */
+async function bridgeClipboardSet(text) {
+  if (!S.bridge.ok) return false;
+  try {
+    const res = await fetch(S.bridge.url.replace(/\/+$/, "") + "/clipboard", {
+      method: "POST",
+      headers: bridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ text })
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function writeLocalClipboard(text) {
+  const done = () => {
+    toast(`已同步对方剪贴板 · ${text.length} 字符`, "ok", 1800);
+    log(`剪贴板已同步（${text.length} 字符）`, "ok");
+  };
+  try {
+    await navigator.clipboard.writeText(text);
+    done();
+    return;
+  } catch (e) {
+    /* file:// 或未聚焦时 clipboard API 会被拒，退回旧接口 */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    if (ok) { done(); return; }
+  } catch (e) { /* ignore */ }
+  toast("写入本机剪贴板失败：请点一下页面后重试", "err", 3000);
+}
+
+/** Ctrl+V：先把本机剪贴板推给对端，再发按键，避免对端粘贴到旧内容 */
+async function smartPaste(mods) {
+  let text = "";
+  try { text = await navigator.clipboard.readText(); } catch (e) { text = ""; }
+  if (text) {
+    sendCtl({ t: "clip-set", text: text.slice(0, 256 * 1024) });
+    await new Promise((r) => setTimeout(r, 70));
+  }
+  sendInput({ t: "k", d: "down", key: "v", code: "KeyV", mods });
+  setTimeout(() => sendInput({ t: "k", d: "up", key: "v", code: "KeyV", mods }), 40);
+}
+
+/**
+ * 不排队等定时器：上一批请求一回来就立刻发下一批。
+ * 之前固定等 30ms 才发，等于把鼠标更新率压到 33Hz，手感就是从这里丢的。
+ */
+function bridgeSend(ev) {
+  if (!S.bridge.ok) return;
+  S.bridge.queue.push(ev);
+  if (S.bridge.queue.length > 400) S.bridge.queue.splice(0, S.bridge.queue.length - 400);
+  pumpBridge();
+}
+
+async function pumpBridge() {
+  if (S.bridge.inflight || !S.bridge.queue.length) return;
+  S.bridge.inflight = true;
+  const events = S.bridge.queue.splice(0, 240);
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 2000);
+    const res = await fetch(S.bridge.url.replace(/\/+$/, "") + "/input", {
+      method: "POST",
+      headers: bridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ events }),
+      signal: ctl.signal
+    });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+  } catch (e) {
+    S.bridge.queue.length = 0;
+    if (S.bridge.ok) {
+      S.bridge.ok = false;
+      setBridgeStatus(false);
+      log("本机桥接断开，正在自动重连…", "warn");
+      toast("本机桥接断开，正在自动重连", "err", 3000);
+      reportBridgeState();
+    }
+    scheduleBridgeRetry(2000);
+  }
+  S.bridge.inflight = false;
+  if (S.bridge.queue.length) pumpBridge();
+}
+
+function setBridgeStatus(ok, screen, backend) {
+  const b = byId("bridgeStatus");
+  if (ok) {
+    b.textContent = "已连接" + (screen ? ` · ${screen[0]}×${screen[1]}` : "")
+      + (backend ? ` · ${backend}` : "");
+    b.className = "on";
+  } else {
+    b.textContent = "未启用";
+    b.className = "off";
+  }
+}
+
+/**
+ * 桥接会自己恢复：一次请求失败（休眠、进程重启、localhost 握手被打断）不应该
+ * 让键鼠永久失效。失败后按 3s→6s→12s→15s 退避重试，直到重新连上。
+ */
+let bridgeRetryTimer = 0;
+
+function scheduleBridgeRetry(delay) {
+  if (bridgeRetryTimer) return;
+  const wait = delay || 3000;
+  bridgeRetryTimer = setTimeout(async () => {
+    bridgeRetryTimer = 0;
+    if (S.bridge.ok) return;
+    await bridgePing({ silent: true });
+    if (!S.bridge.ok) scheduleBridgeRetry(Math.min(wait * 2, 15000));
+  }, wait);
+}
+
+function reportBridgeState() {
+  if (S.pc) sendCtl({ t: "bridge", ok: S.bridge.ok });
+}
+
+/** 桥接现在要求配对令牌，所有请求统一从这里加头（自定义头会触发预检，服务端已放行）。 */
+function bridgeHeaders(extra) {
+  const h = Object.assign({}, extra || {});
+  const token = (S.bridge.token || "").trim();
+  if (token) h["X-MyDesk-Token"] = token;
+  return h;
+}
+
+function bridgeBase() {
+  return byId("bridgeUrl").value.trim().replace(/\/+$/, "") || "http://127.0.0.1:8765";
+}
+
+async function bridgePing(opts) {
+  const silent = !!(opts && opts.silent);
+  const url = bridgeBase();
+  S.bridge.token = byId("bridgeToken").value.trim();
+  try { localStorage.setItem("mydesk.bridgetoken.v1", S.bridge.token); } catch (err) {}
+  if (!silent) {
+    byId("btnBridgeConnect").disabled = true;
+    byId("btnBridgeConnect").textContent = "检测中…";
+  }
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 1800);
+    const res = await fetch(url + "/health", { signal: ctl.signal, cache: "no-store", headers: bridgeHeaders() });
+    clearTimeout(timer);
+    if (res.status === 401 || res.status === 403) {
+      S.bridge.ok = false;
+      setBridgeStatus(false);
+      const why = res.status === 401 ? "配对令牌不正确或未填" : "Host/来源被桥接拒绝";
+      log("本机桥接拒绝了这次连接：" + why, "err");
+      if (!silent) toast(why + "：请填 bridge 启动时打印的配对令牌", "err", 5600);
+      return;
+    }
+    const info = await res.json();
+    const back = !S.bridge.ok;
+    S.bridge.url = url;
+    S.bridge.ok = true;
+    setBridgeStatus(true, info.screen, info.backend);
+    if (info.backend === "none") {
+      log("本机桥接没有可用的输入后端：" + (info.error || "未安装 pynput / ydotool"), "err");
+      toast("桥接已连接，但注入后端不可用；Wayland 请安装 ydotool", "err", 5200);
+    }
+    if (back) {
+      log("本机桥接已恢复：" + url, "ok");
+      if (!silent) toast("系统级操控已就绪", "ok");
+    }
+    reportBridgeState();
+  } catch (e) {
+    const was = S.bridge.ok;
+    S.bridge.ok = false;
+    setBridgeStatus(false);
+    if (!silent || was) log("本机桥接不可用：" + url, "warn");
+    if (!silent) toast("未检测到本机桥接。展开卡片按提示运行 bridge.py 后重试", "err", 4200);
+    reportBridgeState();
+    scheduleBridgeRetry(3000);
+  } finally {
+    if (!silent) {
+      byId("btnBridgeConnect").disabled = false;
+      byId("btnBridgeConnect").textContent = "检测";
+    }
+  }
+}
+
+/* ============================================================
+   9. 事件绑定
+   ============================================================ */
+function bindUI() {
+  byId("modeSeg").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-mode]");
+    if (!btn || btn.disabled) return;
+    setMode(btn.dataset.mode);
+  });
+  byId("btnCreateRoom").addEventListener("click", createRoom);
+  byId("btnJoinRoom").addEventListener("click", joinRoom);
+  byId("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoom(); });
+  byId("btnLeaveRoom").addEventListener("click", () => { srvSend({ type: "bye" }); resetServer(); });
+  byId("btnPeerAllow").addEventListener("click", allowPeerApprove);
+  byId("btnPeerDeny").addEventListener("click", () => denyPeerApprove());
+  byId("btnCopyLink").addEventListener("click", (e) => copyText(byId("roomLink").value, e.currentTarget));
+
+  byId("btnHost").addEventListener("click", hostStart);
+  byId("btnGuest").addEventListener("click", () => {
+    byId("sigErr").textContent = "";
+    setPhase("guest-input");
+    byId("guestIn").focus();
+  });
+  byId("btnCancelHost").addEventListener("click", () => {
+    closePeer(true); setPhase("idle"); setPill("未连接", "");
+  });
+  byId("btnCancelGuest").addEventListener("click", () => {
+    closePeer(true); setPhase("idle"); setPill("未连接", "");
+  });
+  byId("btnCancelGuest2").addEventListener("click", () => {
+    closePeer(true); setPhase("idle"); setPill("未连接", "");
+  });
+
+  byId("btnCopyOffer").addEventListener("click", (e) => copyText(byId("hostOut").value, e.currentTarget));
+  byId("btnCopyAnswer").addEventListener("click", (e) => copyText(byId("guestOut").value, e.currentTarget));
+  byId("btnPasteAnswer").addEventListener("click", () => pasteInto(byId("hostIn")));
+  byId("btnPasteOffer").addEventListener("click", () => pasteInto(byId("guestIn")));
+  byId("btnAcceptAnswer").addEventListener("click", hostAcceptAnswer);
+  byId("btnMakeAnswer").addEventListener("click", guestMakeAnswer);
+
+  byId("btnDisconnect").addEventListener("click", () => {
+    if (SRV.ws) {
+      srvSend({ type: "bye" });
+      resetServer();
+      toast("已断开");
+      return;
+    }
+    closePeer(false);
+    setPhase("idle");
+    setPill("未连接", "");
+    toast("已断开");
+  });
+
+  byId("btnShare").addEventListener("click", shareScreen);
+  byId("btnTestShare").addEventListener("click", shareTest);
+  byId("btnStopShare").addEventListener("click", () => {
+    stopLocalStream(true);
+    log("已停止共享", "warn");
+  });
+
+  byId("swAllow").addEventListener("change", (e) => {
+    S.allowControl = e.target.checked;
+    if (!S.allowControl && S.bridge.ok) bridgeSend({ t: "release" });
+    sendCtl({ t: "perm", allow: S.allowControl });
+    byId("permBanner").hidden = true;
+    toast(S.allowControl ? "已允许对方控制本机" : "已停止接受对方控制", S.allowControl ? "ok" : "");
+    log(S.allowControl ? "已授权对方控制" : "已撤销控制授权", S.allowControl ? "ok" : "warn");
+    render();
+  });
+
+  byId("swControl").addEventListener("change", (e) => {
+    S.wantControl = e.target.checked;
+    if (S.wantControl) {
+      if (!S.remoteAllows) sendCtl({ t: "ask" });
+      if (!remoteVisible()) toast("对方还没有共享画面，可以先请求授权");
+      else toast("点击右侧画面即可接管键鼠，Esc 释放键盘", "ok", 3200);
+    } else {
+      releaseKeyboard();
+    }
+    render();
+  });
+
+  byId("btnPermAllow").addEventListener("click", () => {
+    S.allowControl = true;
+    byId("swAllow").checked = true;
+    sendCtl({ t: "perm", allow: true });
+    byId("permBanner").hidden = true;
+    log("已允许对方控制", "ok");
+    toast("已允许对方控制", "ok");
+    render();
+  });
+  byId("btnPermDeny").addEventListener("click", () => {
+    // 必须真的撤销本地授权：只发消息会让「已拒绝」变成一句空话，
+    // 而 onInputMessage 仍会因为 S.allowControl 为 true 继续注入键鼠。
+    S.allowControl = false;
+    byId("swAllow").checked = false;
+    sendCtl({ t: "perm", allow: false });
+    byId("permBanner").hidden = true;
+    if (S.bridge.ok) bridgeSend({ t: "release" });
+    toast("已拒绝并撤销控制授权");
+    render();
+  });
+
+  byId("quality").addEventListener("change", () => { applyBitrate(); });
+
+  byId("swClip").addEventListener("change", (e) => {
+    S.clipSync = e.target.checked;
+    try { localStorage.setItem("mydesk.clip.v1", S.clipSync ? "1" : "0"); } catch (err) {}
+    toast(S.clipSync ? "剪贴板同步已开启" : "剪贴板同步已关闭", S.clipSync ? "ok" : "");
+  });
+
+  byId("swHideCursor").addEventListener("change", (e) => {
+    S.hideCursor = e.target.checked;
+    try { localStorage.setItem("mydesk.hideCursor.v1", S.hideCursor ? "1" : "0"); } catch (err) {}
+    updateStageOverlay();
+  });
+
+  // 舞台交互
+  dom.stage.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0 && ev.button !== 2 && ev.button !== 1) return;
+    // 工具栏在画面之上，点它是要操作本页面，不能当成“控制远端”的点击吃掉
+    if (ev.target.closest(".stage-tools")) { S.input.downOnStage = false; return; }
+    S.input.downOnStage = true;
+    if (S.phase !== "live") return;
+    if (!S.wantControl) {
+      if (remoteVisible()) toast("先在左侧开启「我可以控制对方」");
+      return;
+    }
+    if (!S.remoteAllows) { toast("对方尚未授权控制，已发送请求"); sendCtl({ t: "ask" }); return; }
+    if (!remoteVisible()) { toast("对方还没有共享画面"); return; }
+
+    ev.preventDefault();
+    dom.stage.focus();
+    try { dom.stage.setPointerCapture(ev.pointerId); } catch (e) {}
+    // 点击即接管：同时把这次点击发给远端
+    if (!S.input.active) activateControl();
+    const p = normPoint(ev);
+    sendInput({ t: "mb", d: 1, b: ev.button, x: p.x, y: p.y, bts: ev.buttons | 0 });
+  });
+
+  dom.stage.addEventListener("pointermove", (ev) => {
+    if (!canSendInput()) return;
+    if (!remoteVisible()) return;
+    queueMove(ev);
+  });
+
+  const upHandler = (ev) => {
+    // 只有按下是打在画面上，抬起才需要通知远端（否则会给对方发一个孤立的抬键）
+    if (!S.input.downOnStage) return;
+    S.input.downOnStage = false;
+    if (!canSendInput()) return;
+    const p = normPoint(ev);
+    sendInput({ t: "mb", d: 0, b: ev.button, x: p.x, y: p.y });
+  };
+  dom.stage.addEventListener("pointerup", upHandler);
+  dom.stage.addEventListener("pointercancel", upHandler);
+  dom.stage.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  dom.stage.addEventListener("wheel", (ev) => {
+    if (ev.target.closest(".stage-tools")) return;
+    if (!canSendInput()) return;
+    if (!remoteVisible()) return;
+    ev.preventDefault();
+    const delta = ev.deltaMode === 1 ? ev.deltaY * 16 : ev.deltaY;
+    S.input.wheel += delta;
+    if (!S.input.wheelTimer) {
+      S.input.wheelTimer = setTimeout(() => {
+        S.input.wheelTimer = 0;
+        const total = S.input.wheel;
+        S.input.wheel = 0;
+        const steps = Math.sign(total) * Math.max(1, Math.min(12, Math.round(Math.abs(total) / 90)));
+        if (steps) sendInput({ t: "w", dy: steps });
+      }, 45);
+    }
+  }, { passive: false });
+
+  document.addEventListener("keydown", onKeyDown, true);
+  document.addEventListener("keyup", onKeyUp, true);
+  window.addEventListener("blur", () => { if (S.input.active) deactivateControl(true); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && !S.bridge.ok) {
+      clearTimeout(bridgeRetryTimer);
+      bridgeRetryTimer = 0;
+      bridgePing({ silent: true });
+    }
+  });
+
+  byId("btnFullscreen").addEventListener("click", () => {
+    if (!document.fullscreenElement) {
+      (dom.stage.requestFullscreen ? dom.stage.requestFullscreen() : Promise.reject()).catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  });
+
+  byId("btnSound").addEventListener("click", (e) => {
+    const v = dom.remote;
+    v.muted = !v.muted;
+    e.currentTarget.classList.toggle("muted", v.muted);
+    if (!v.muted) v.play().catch(() => toast("浏览器拦截了自动播放，请再点一次画面"));
+  });
+
+  byId("btnIceReset").addEventListener("click", () => {
+    byId("iceList").value = DEFAULT_ICE.join("\n");
+    byId("turnUser").value = "";
+    byId("turnPass").value = "";
+    saveIceConfig();
+    toast("已恢复默认 ICE 服务器", "ok");
+  });
+  for (const id of ["iceList", "turnUser", "turnPass"]) {
+    byId(id).addEventListener("change", saveIceConfig);
+  }
+  byId("codecPref").addEventListener("change", (e) => {
+    const i = CODEC_SLOTS.indexOf(e.target.value);
+    try { localStorage.setItem("mydesk.codec.v1", e.target.value); } catch (err) {}
+    setCodecSlot(i, true);
+    const name = CODEC_LABEL[e.target.value] || e.target.value.toUpperCase();
+    if (S.phase === "live") toast("已切换到 " + name + "，无需重连", "ok");
+    else toast("编码偏好：" + name + "，连接后生效", "ok");
+  });
+
+  byId("btnIceProbe").addEventListener("click", probeAllIce);
+
+  byId("btnCopyStun").addEventListener("click", (e) => copyText(STUN_SCRIPT, e.currentTarget));
+  byId("btnDownloadStun").addEventListener("click", () => downloadText(STUN_SCRIPT, "stun.py", "text/x-python"));
+
+  byId("btnBridgeConnect").addEventListener("click", bridgePing);
+  byId("btnCopyScript").addEventListener("click", (e) => copyText(BRIDGE_SCRIPT, e.currentTarget));
+  byId("btnDownloadScript").addEventListener("click", () => downloadText(BRIDGE_SCRIPT, "bridge.py", "text/x-python"));
+  byId("btnDownloadExe").addEventListener("click", () => {
+    if (!BRIDGE_RELEASE_URL || BRIDGE_RELEASE_URL.includes("OWNER/REPO")) {
+      toast("打包版需要仓库地址：把 BRIDGE_RELEASE_URL 改成你的 Releases 链接", "err", 4200);
+      return;
+    }
+    // 直接链到 exe 会让人跳过校验：指向 Release 页，.sha256 就在同一个文件列表里。
+    window.open(BRIDGE_RELEASE_URL, "_blank", "noopener");
+    toast("下载后请对照同页的 .sha256 校验：certutil -hashfile MyDeskBridge.exe SHA256", "", 7000);
+  });
+
+  window.addEventListener("beforeunload", () => {
+    srvSend({ type: "bye" });
+    closePeer(false);
+  });
+}
+
+/* ============================================================
+   10. 本机桥接脚本（可选，用于真正的系统级操控）
+   ============================================================ */
+// 打包好的 Windows 程序（由 .github/workflows/bridge.yml 构建并挂到 Release）
+const BRIDGE_RELEASE_URL = "https://github.com/urarattas/MyDesk/releases/latest";
+
+const BRIDGE_SCRIPT = `#!/usr/bin/env python3
+# MyDesk bridge - 把浏览器收到的键鼠事件注入本机系统
+#
+# 后端（自动选择，可用 BRIDGE_BACKEND=pynput|ydotool|none 强制）：
+#   pynput   X11 / Windows / macOS —— 走 XTEST / SendInput
+#   ydotool  Linux Wayland —— 走 /dev/uinput，能注入原生 Wayland 窗口
+#
+# 仅监听 127.0.0.1:8765。但“只绑定回环”不等于“只有本机可信”：浏览器就在
+# 本机，任何打开的网页都能访问 127.0.0.1。所以除绑定回环外还有三道门：
+#   1. Host 必须是回环地址（挡住 DNS rebinding）；
+#   2. 注入键鼠、读写剪贴板必须带配对令牌（启动时打印，可用 BRIDGE_TOKEN 固定）；
+#   3. CORS 只回显来源，不再用 "*"。
+import glob
+import hmac
+import json
+import os
+import secrets
+import shutil
+import subprocess
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+PORT = int(os.environ.get("BRIDGE_PORT", "8765"))
+_REQ_BACKEND = os.environ.get("BRIDGE_BACKEND", "auto").strip().lower()
+
+
+# --------------------------------------------------------------------------
+# 屏幕尺寸
+# --------------------------------------------------------------------------
+
+def _drm_size():
+    """Wayland 下 XWayland 报的是缩放后的逻辑分辨率，而 uinput 注入用的是
+    原生像素。从 DRM 连接器读首选模式，才是真实分辨率。"""
+    best = (0, 0)
+    for status in glob.glob("/sys/class/drm/card*-*/status"):
+        try:
+            with open(status) as f:
+                if f.read().strip() != "connected":
+                    continue
+            with open(os.path.join(os.path.dirname(status), "modes")) as f:
+                first = f.readline().strip()
+        except OSError:
+            continue
+        if "x" not in first:
+            continue
+        try:
+            w, h = (int(x) for x in first.split("x")[:2])
+        except ValueError:
+            continue
+        if w * h > best[0] * best[1]:
+            best = (w, h)
+    return best
+
+
+def _x11_size():
+    try:
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()
+        size = (root.winfo_screenwidth(), root.winfo_screenheight())
+        root.destroy()
+        return size
+    except Exception:
+        return (0, 0)
+
+
+def screen_size():
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            except Exception:
+                ctypes.windll.user32.SetProcessDPIAware()
+            u = ctypes.windll.user32
+            return u.GetSystemMetrics(0), u.GetSystemMetrics(1)
+        except Exception:
+            pass
+
+    if sys.platform.startswith("linux") and os.environ.get("WAYLAND_DISPLAY"):
+        size = _drm_size()
+        if size[0] and size[1]:
+            return size
+
+    size = _x11_size()
+    if size[0] and size[1]:
+        return size
+    return (1920, 1080)
+
+
+SW, SH = screen_size()
+
+
+# --------------------------------------------------------------------------
+# 后端
+# --------------------------------------------------------------------------
+
+class Backend:
+    name = "none"
+    error = ""
+
+    def move(self, x, y):
+        pass
+
+    def button(self, index, down):
+        pass
+
+    def scroll(self, dy):
+        pass
+
+    def key(self, down, code, ch, mods):
+        pass
+
+    def release_all(self):
+        pass
+
+    def close(self):
+        pass
+
+
+class PynputBackend(Backend):
+    """X11 / Windows / macOS。pynput 在 Wayland 下只能注入 XWayland 窗口。"""
+
+    name = "pynput"
+
+    def __init__(self):
+        from pynput.mouse import Controller as MouseCtl, Button
+        from pynput.keyboard import Controller as KeyCtl, Key, KeyCode
+
+        self._Key = Key
+        self._KeyCode = KeyCode
+        self.mouse = MouseCtl()
+        self.kb = KeyCtl()
+        self.btn = {0: Button.left, 1: Button.middle, 2: Button.right}
+        self.mods = [(1, Key.ctrl), (2, Key.shift), (4, Key.alt), (8, Key.cmd)]
+        self.special = {
+            "Escape": Key.esc, "Enter": Key.enter, "NumpadEnter": Key.enter,
+            "Backspace": Key.backspace, "Tab": Key.tab, "Delete": Key.delete,
+            "ArrowUp": Key.up, "ArrowDown": Key.down, "ArrowLeft": Key.left,
+            "ArrowRight": Key.right, "Home": Key.home, "End": Key.end,
+            "PageUp": Key.page_up, "PageDown": Key.page_down, "Insert": Key.insert,
+            "CapsLock": Key.caps_lock, "Space": Key.space,
+        }
+        for i in range(1, 13):
+            self.special["F" + str(i)] = getattr(Key, "f" + str(i))
+        extra = {
+            "PrintScreen": "print_screen", "ScrollLock": "scroll_lock", "Pause": "pause",
+            "ContextMenu": "menu",
+            "AudioVolumeMute": "media_volume_mute", "AudioVolumeDown": "media_volume_down",
+            "AudioVolumeUp": "media_volume_up", "MediaPlayPause": "media_play_pause",
+            "MediaStop": "media_stop", "MediaTrackNext": "media_next",
+            "MediaTrackPrevious": "media_previous",
+            "BrowserBack": "browser_back", "BrowserForward": "browser_forward",
+            "BrowserRefresh": "browser_refresh", "BrowserHome": "browser_home",
+            "BrowserSearch": "browser_search", "BrowserFavorites": "browser_favorites",
+        }
+        for code, attr in extra.items():
+            key = getattr(Key, attr, None)
+            if key is not None:
+                self.special[code] = key
+
+        self.held_mods = set()
+        self.held_by_code = {}
+
+    def move(self, x, y):
+        try:
+            self.mouse.position = (int(x * SW), int(y * SH))
+        except Exception:
+            pass
+
+    def button(self, index, down):
+        try:
+            b = self.btn.get(index)
+            if b is None:
+                return
+            (self.mouse.press if down else self.mouse.release)(b)
+        except Exception:
+            pass
+
+    def scroll(self, dy):
+        try:
+            self.mouse.scroll(0, -int(dy))
+        except Exception:
+            pass
+
+    def _resolve(self, code, ch):
+        target = self.special.get(code)
+        if target is not None:
+            return target, False
+        if len(ch) == 1 and ch != "Dead":
+            try:
+                if ch.isalpha():
+                    return self._KeyCode.from_char(ch.lower()), False
+                return self._KeyCode.from_char(ch), True
+            except Exception:
+                return None, False
+        return None, False
+
+    def _sync_mods(self, mods, skip_shift):
+        for bit, mk in self.mods:
+            want = bool(mods & bit) and not (bit == 2 and skip_shift)
+            if want and mk not in self.held_mods:
+                try:
+                    self.kb.press(mk)
+                    self.held_mods.add(mk)
+                except Exception:
+                    pass
+            elif not want and mk in self.held_mods:
+                try:
+                    self.kb.release(mk)
+                    self.held_mods.discard(mk)
+                except Exception:
+                    pass
+
+    def key(self, down, code, ch, mods):
+        target, skip_shift = self._resolve(code, ch)
+        self._sync_mods(mods, skip_shift)
+        if down:
+            if target is None or code in self.held_by_code:
+                return
+            try:
+                self.kb.press(target)
+                self.held_by_code[code] = target
+            except Exception:
+                pass
+        else:
+            target = self.held_by_code.pop(code, target)
+            if target is None:
+                return
+            try:
+                self.kb.release(target)
+            except Exception:
+                pass
+
+    def release_all(self):
+        for target in list(self.held_by_code.values()):
+            try:
+                self.kb.release(target)
+            except Exception:
+                pass
+        self.held_by_code.clear()
+        for mk in list(self.held_mods):
+            try:
+                self.kb.release(mk)
+            except Exception:
+                pass
+        self.held_mods.clear()
+
+
+class YdotoolBackend(Backend):
+    """Linux Wayland（以及任何有 /dev/uinput 的会话）。
+
+    ydotool 1.x 只提供 click / key / mousemove / type —— 没有滚轮，
+    所以 scroll() 是空实现，启动时会提示。
+    """
+
+    name = "ydotool"
+
+    # 浏览器 KeyboardEvent.code -> Linux evdev keycode
+    KEYS = {
+        "Escape": 1, "Digit1": 2, "Digit2": 3, "Digit3": 4, "Digit4": 5,
+        "Digit5": 6, "Digit6": 7, "Digit7": 8, "Digit8": 9, "Digit9": 10,
+        "Digit0": 11, "Minus": 12, "Equal": 13, "Backspace": 14, "Tab": 15,
+        "KeyQ": 16, "KeyW": 17, "KeyE": 18, "KeyR": 19, "KeyT": 20, "KeyY": 21,
+        "KeyU": 22, "KeyI": 23, "KeyO": 24, "KeyP": 25,
+        "BracketLeft": 26, "BracketRight": 27, "Enter": 28, "ControlLeft": 29,
+        "KeyA": 30, "KeyS": 31, "KeyD": 32, "KeyF": 33, "KeyG": 34, "KeyH": 35,
+        "KeyJ": 36, "KeyK": 37, "KeyL": 38, "Semicolon": 39, "Quote": 40,
+        "Backquote": 41, "ShiftLeft": 42, "Backslash": 43,
+        "KeyZ": 44, "KeyX": 45, "KeyC": 46, "KeyV": 47, "KeyB": 48, "KeyN": 49,
+        "KeyM": 50, "Comma": 51, "Period": 52, "Slash": 53, "ShiftRight": 54,
+        "NumpadMultiply": 55, "AltLeft": 56, "Space": 57, "CapsLock": 58,
+        "F1": 59, "F2": 60, "F3": 61, "F4": 62, "F5": 63, "F6": 64, "F7": 65,
+        "F8": 66, "F9": 67, "F10": 68, "NumLock": 69, "ScrollLock": 70,
+        "Numpad7": 71, "Numpad8": 72, "Numpad9": 73, "NumpadSubtract": 74,
+        "Numpad4": 75, "Numpad5": 76, "Numpad6": 77, "NumpadAdd": 78,
+        "Numpad1": 79, "Numpad2": 80, "Numpad3": 81, "Numpad0": 82,
+        "NumpadDecimal": 83, "F11": 87, "F12": 88, "NumpadEnter": 96,
+        "ControlRight": 97, "NumpadDivide": 98, "PrintScreen": 99,
+        "AltRight": 100, "Home": 102, "ArrowUp": 103, "PageUp": 104,
+        "ArrowLeft": 105, "ArrowRight": 106, "End": 107, "ArrowDown": 108,
+        "PageDown": 109, "Insert": 110, "Delete": 111,
+        "AudioVolumeMute": 113, "AudioVolumeDown": 114, "AudioVolumeUp": 115,
+        "Pause": 119, "MetaLeft": 125, "MetaRight": 126, "ContextMenu": 127,
+    }
+    MODS = [(1, 29), (2, 42), (4, 56), (8, 125)]      # ctrl shift alt meta
+
+    def __init__(self):
+        self.bin = shutil.which("ydotool")
+        if not self.bin:
+            raise RuntimeError("ydotool not found")
+        self.held_mods = set()
+        self.held_keys = set()
+        self._warned = set()
+
+    def _run(self, *args, quiet=False):
+        try:
+            res = subprocess.run(
+                [self.bin, *args],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=3,
+            )
+            if res.returncode != 0 and not quiet:
+                msg = res.stderr.decode("utf-8", "replace").strip() or ("exit %d" % res.returncode)
+                self.error = msg
+                if msg not in self._warned:
+                    self._warned.add(msg)
+                    print("ydotool failed: " + msg, file=sys.stderr)
+        except Exception as exc:
+            self.error = str(exc)
+            if str(exc) not in self._warned:
+                self._warned.add(str(exc))
+                print("ydotool failed: %s" % exc, file=sys.stderr)
+
+    def move(self, x, y):
+        self._run("mousemove", "--absolute",
+                  "-x", str(int(x * SW)), "-y", str(int(y * SH)), quiet=True)
+
+    def button(self, index, down):
+        # 0xC0 = press|release|left；按下=0x40|idx，抬起=0x80|idx
+        code = (0x40 if down else 0x80) | (index & 0x03)
+        self._run("click", str(code))
+
+    def scroll(self, dy):
+        # ydotool 1.x 没有滚轮命令
+        if "scroll" not in self._warned:
+            self._warned.add("scroll")
+            print("ydotool 1.x has no wheel command; scrolling is ignored", file=sys.stderr)
+
+    def key(self, down, code, ch, mods):
+        kc = self.KEYS.get(code)
+        is_modifier_key = kc in (29, 42, 56, 125)
+        specs = []
+        # 修饰键完全由 mods 位管理：按下 Ctrl 时浏览器会给 ctrlKey=True，
+        # 松开时给 False，不需要再单独跟踪 ControlLeft 的 keyup。
+        for bit, mk in self.MODS:
+            want = bool(mods & bit)
+            if want and mk not in self.held_mods:
+                specs.append("%d:1" % mk)
+                self.held_mods.add(mk)
+            elif not want and mk in self.held_mods:
+                specs.append("%d:0" % mk)
+                self.held_mods.discard(mk)
+        if kc is not None and not is_modifier_key:
+            if down and kc not in self.held_keys:
+                specs.append("%d:1" % kc)
+                self.held_keys.add(kc)
+            elif not down and kc in self.held_keys:
+                specs.append("%d:0" % kc)
+                self.held_keys.discard(kc)
+        if specs:
+            self._run("key", *specs)
+
+    def release_all(self):
+        specs = ["%d:0" % k for k in self.held_keys]
+        specs += ["%d:0" % k for k in self.held_mods]
+        self.held_keys.clear()
+        self.held_mods.clear()
+        if specs:
+            self._run("key", *specs)
+
+
+def pick_backend():
+    forced = _REQ_BACKEND
+    if forced == "none":
+        return Backend()
+
+    want = []
+    if forced in ("ydotool", "pynput"):
+        want = [forced]
+    elif sys.platform.startswith("linux") and os.environ.get("WAYLAND_DISPLAY"):
+        want = ["ydotool", "pynput"]          # Wayland 优先 uinput
+    else:
+        want = ["pynput", "ydotool"]
+
+    errors = []
+    for name in want:
+        try:
+            if name == "ydotool":
+                return YdotoolBackend()
+            return PynputBackend()
+        except Exception as exc:
+            errors.append("%s: %s" % (name, exc))
+
+    b = Backend()
+    b.error = "; ".join(errors)
+    return b
+
+
+BACKEND = pick_backend()
+
+
+# --------------------------------------------------------------------------
+# 系统剪贴板（纯文本）
+# --------------------------------------------------------------------------
+
+def _run_tool(args, data=None, timeout=2):
+    """调用外部剪贴板工具，返回 (stdout, error)。"""
+    try:
+        res = subprocess.run(
+            args,
+            input=data,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+        )
+        if res.returncode != 0:
+            return "", (res.stderr.decode("utf-8", "replace").strip()
+                        or "exit %d" % res.returncode)
+        return res.stdout.decode("utf-8", "replace"), None
+    except Exception as exc:
+        return "", str(exc)
+
+
+def _win_clipboard_get():
+    import ctypes
+    from ctypes import wintypes
+
+    u = ctypes.windll.user32
+    k = ctypes.windll.kernel32
+    u.GetClipboardData.restype = wintypes.HANDLE
+    u.GetClipboardData.argtypes = [wintypes.UINT]
+    k.GlobalLock.restype = wintypes.LPVOID
+    k.GlobalLock.argtypes = [wintypes.HANDLE]
+    k.GlobalUnlock.argtypes = [wintypes.HANDLE]
+
+    CF_UNICODETEXT = 13
+    if not u.OpenClipboard(None):
+        return "", "OpenClipboard failed"
+    try:
+        handle = u.GetClipboardData(CF_UNICODETEXT)
+        if not handle:
+            return "", None
+        ptr = k.GlobalLock(handle)
+        if not ptr:
+            return "", "GlobalLock failed"
+        try:
+            return ctypes.wstring_at(ptr), None
+        finally:
+            k.GlobalUnlock(handle)
+    finally:
+        u.CloseClipboard()
+
+
+def _win_clipboard_set(text):
+    import ctypes
+    from ctypes import wintypes
+
+    u = ctypes.windll.user32
+    k = ctypes.windll.kernel32
+    k.GlobalAlloc.restype = wintypes.HANDLE
+    k.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    k.GlobalLock.restype = wintypes.LPVOID
+    k.GlobalLock.argtypes = [wintypes.HANDLE]
+    k.GlobalUnlock.argtypes = [wintypes.HANDLE]
+    u.SetClipboardData.restype = wintypes.HANDLE
+    u.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+
+    CF_UNICODETEXT = 13
+    GMEM_MOVEABLE = 0x0002
+    data = text.encode("utf-16-le") + bytes(2)      # 结尾两个 NUL 字节
+
+    handle = k.GlobalAlloc(GMEM_MOVEABLE, len(data))
+    if not handle:
+        return "GlobalAlloc failed"
+    ptr = k.GlobalLock(handle)
+    if not ptr:
+        return "GlobalLock failed"
+    ctypes.memmove(ptr, data, len(data))
+    k.GlobalUnlock(handle)
+
+    if not u.OpenClipboard(None):
+        return "OpenClipboard failed"
+    try:
+        u.EmptyClipboard()
+        if not u.SetClipboardData(CF_UNICODETEXT, handle):
+            return "SetClipboardData failed"
+        return None
+    finally:
+        u.CloseClipboard()
+
+
+class Clipboard:
+    """只用纯文本；工具缺失时 name 保持 "none"，页面会提示不可用。"""
+
+    def __init__(self):
+        self.name = "none"
+        self._get = lambda: ("", "unsupported")
+        self._set = lambda text: "unsupported"
+        self._pick()
+
+    def _pick(self):
+        if sys.platform == "win32":
+            self.name = "win32"
+            self._get = _win_clipboard_get
+            self._set = _win_clipboard_set
+            return
+        if sys.platform == "darwin":
+            if shutil.which("pbpaste") and shutil.which("pbcopy"):
+                self.name = "pbcopy"
+                self._get = lambda: _run_tool(["pbpaste"])
+                self._set = lambda t: _run_tool(["pbcopy"], t.encode())[1]
+            return
+        if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-paste") and shutil.which("wl-copy"):
+            self.name = "wl-clipboard"
+            self._get = lambda: _run_tool(["wl-paste", "--no-newline"])
+            self._set = lambda t: _run_tool(["wl-copy"], t.encode())[1]
+            return
+        if shutil.which("xclip"):
+            self.name = "xclip"
+            self._get = lambda: _run_tool(["xclip", "-selection", "clipboard", "-o"])
+            self._set = lambda t: _run_tool(["xclip", "-selection", "clipboard", "-i"], t.encode())[1]
+            return
+        if shutil.which("xsel"):
+            self.name = "xsel"
+            self._get = lambda: _run_tool(["xsel", "--clipboard", "--output"])
+            self._set = lambda t: _run_tool(["xsel", "--clipboard", "--input"], t.encode())[1]
+            return
+
+    def get(self):
+        text, err = self._get()
+        return (text or ""), err
+
+    def set(self, text):
+        if self.name == "win32":
+            return self._set(text)
+        return self._set(text)
+
+
+CLIPBOARD = Clipboard()
+
+
+# --------------------------------------------------------------------------
+# 事件分发
+# --------------------------------------------------------------------------
+
+def handle(ev):
+    t = ev.get("t")
+    if t == "m":
+        BACKEND.move(float(ev.get("x", 0)), float(ev.get("y", 0)))
+    elif t == "mb":
+        if "x" in ev and "y" in ev:
+            BACKEND.move(float(ev.get("x", 0)), float(ev.get("y", 0)))
+        BACKEND.button(int(ev.get("b", 0) or 0), ev.get("d") == 1)
+    elif t == "w":
+        BACKEND.scroll(int(ev.get("dy", 0) or 0))
+    elif t == "k":
+        BACKEND.key(
+            ev.get("d") == "down",
+            ev.get("code", ""),
+            ev.get("key", ""),
+            int(ev.get("mods", 0) or 0),
+        )
+    elif t == "release":
+        BACKEND.release_all()
+
+
+def apply_events(events):
+    """一次请求里的连续鼠标移动只落最后一次：中间位置没有意义，
+    还能把每帧几十次指针移动压成一次（ydotool 每次都要拉起一个进程）。"""
+    pending_move = None
+    for ev in events:
+        try:
+            if ev.get("t") == "m":
+                pending_move = ev
+                continue
+            if pending_move is not None:
+                handle(pending_move)
+                pending_move = None
+            handle(ev)
+        except Exception:
+            pass
+    if pending_move is not None:
+        try:
+            handle(pending_move)
+        except Exception:
+            pass
+
+
+# --------------------------------------------------------------------------
+# HTTP + 访问控制
+# --------------------------------------------------------------------------
+
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", ""}
+ALLOWED_HOSTS = LOOPBACK_HOSTS | {
+    h.strip().lower() for h in os.environ.get("BRIDGE_HOSTS", "").split(",") if h.strip()
+}
+
+TOKEN = os.environ.get("BRIDGE_TOKEN")
+if TOKEN is None:
+    TOKEN = secrets.token_hex(16)
+TOKEN = TOKEN.strip()
+
+MAX_BODY = 1024 * 1024
+
+
+def _hostname(value):
+    v = (value or "").strip()
+    if v.startswith("["):
+        return v.split("]")[0].lstrip("[").lower()
+    return v.rsplit(":", 1)[0].lower()
+
+
+def _host_ok(headers):
+    """DNS rebinding 之后浏览器会带攻击者域名作为 Host，这里直接挡掉。"""
+    return _hostname(headers.get("Host")) in ALLOWED_HOSTS
+
+
+def _token_ok(headers):
+    if not TOKEN:
+        return True
+    given = headers.get("X-MyDesk-Token") or ""
+    return hmac.compare_digest(given.encode("utf-8"), TOKEN.encode("utf-8"))
+
+
+class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *a):
+        pass
+
+    def _cors(self):
+        """只回显来源；回显 null 是为了让 file:// 页面（不透明源）能用。"""
+        origin = self.headers.get("Origin")
+        if not origin:
+            return
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-MyDesk-Token")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Access-Control-Max-Age", "600")
+
+    def _reply(self, code, body=b"", ctype=None):
+        self.send_response(code)
+        self._cors()
+        if ctype:
+            self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def _deny(self, code, reason):
+        self._reply(code, json.dumps({"ok": False, "error": reason}).encode(), "application/json")
+
+    def _guard(self, need_token):
+        if not _host_ok(self.headers):
+            self._deny(403, "host not allowed")
+            return False
+        if need_token and not _token_ok(self.headers):
+            self._deny(401, "token required")
+            return False
+        return True
+
+    def do_OPTIONS(self):
+        self._reply(204 if _host_ok(self.headers) else 403)
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        if path == "/clipboard":
+            if not self._guard(True):
+                return
+            text, err = CLIPBOARD.get()
+            body = json.dumps({"ok": err is None, "text": text, "error": err}).encode()
+            self._reply(200, body, "application/json")
+            return
+        if not self._guard(False):
+            return
+        # 不带令牌只回最小信息：够页面判断“桥在不在”，但拿不到分辨率/后端。
+        info = {"ok": True, "auth": "token" if TOKEN else "none"}
+        if _token_ok(self.headers):
+            info.update({
+                "screen": [SW, SH],
+                "backend": BACKEND.name,
+                "clipboard": CLIPBOARD.name,
+                "error": BACKEND.error or None,
+            })
+        self._reply(200, json.dumps(info).encode(), "application/json")
+
+    def do_POST(self):
+        if not self._guard(True):
+            return
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            n = 0
+        if n > MAX_BODY:
+            self.close_connection = True
+            self._deny(413, "body too large")
+            return
+        raw = self.rfile.read(n) if n > 0 else b"{}"
+        path = self.path.split("?", 1)[0]
+        if path == "/clipboard":
+            try:
+                text = json.loads(raw).get("text", "")
+            except Exception:
+                text = ""
+            err = CLIPBOARD.set(str(text))
+            self._reply(204 if err is None else 500)
+            return
+        try:
+            apply_events(json.loads(raw).get("events", []))
+        except Exception:
+            pass
+        self._reply(204)
+
+
+if __name__ == "__main__":
+    if BACKEND.name == "none":
+        print("MyDesk bridge: no usable input backend", file=sys.stderr)
+        if BACKEND.error:
+            print("  " + BACKEND.error, file=sys.stderr)
+        print("  On Wayland install ydotool (uinput); on X11 install pynput.", file=sys.stderr)
+    print("MyDesk bridge  ->  http://127.0.0.1:%d   backend=%s   clipboard=%s   screen %dx%d"
+          % (PORT, BACKEND.name, CLIPBOARD.name, SW, SH))
+    if TOKEN:
+        print("  配对令牌（粘贴到页面「系统级操控 → 配对令牌」）: %s" % TOKEN)
+    else:
+        print("  !! BRIDGE_TOKEN 为空：任何网页都能驱动本桥接，仅供调试", file=sys.stderr)
+    httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    httpd.daemon_threads = True
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        BACKEND.close()
+`;
+
+/* ============================================================
+   10.1 虚拟网 STUN 服务脚本（可选，用于 EasyTier 等组网场景）
+   ============================================================ */
+const STUN_SCRIPT = `#!/usr/bin/env python3
+# MyDesk STUN - 极简 STUN 服务（RFC 5389 Binding），仅标准库
+# 用法: python3 stun.py [绑定地址] [端口]        默认 0.0.0.0:3478
+# 场景: 在 EasyTier 虚拟网里任意一台机器上运行，另一端把 ICE 填 stun:虚拟IP:3478
+import socket, struct, sys
+
+MAGIC = 0x2112A442
+BIND_REQ, BIND_OK = 0x0001, 0x0101
+ATTR_XOR_MAPPED = 0x0020
+
+def xor_addr(addr):
+    ip, port = addr[0], addr[1]
+    xport = port ^ (MAGIC >> 16)
+    if ":" in ip:
+        key = struct.pack("!I", MAGIC) + bytes(12)
+        packed = socket.inet_pton(socket.AF_INET6, ip)
+        fam = 0x02
+    else:
+        key = struct.pack("!I", MAGIC)
+        packed = socket.inet_aton(ip)
+        fam = 0x01
+    xip = bytes(a ^ b for a, b in zip(packed, key))
+    return struct.pack("!BBH", 0, fam, xport) + xip
+
+def reply(data, addr):
+    if len(data) < 20:
+        return None
+    mtype, mlen, cookie = struct.unpack("!HHI", data[:8])
+    if cookie != MAGIC or mtype != BIND_REQ:
+        return None
+    tid = data[8:20]
+    val = xor_addr(addr)
+    attr = struct.pack("!HH", ATTR_XOR_MAPPED, len(val)) + val
+    return struct.pack("!HHI", BIND_OK, len(attr), MAGIC) + tid + attr
+
+def main():
+    host = sys.argv[1] if len(sys.argv) > 1 else "0.0.0.0"
+    port = int(sys.argv[2]) if len(sys.argv) > 2 else 3478
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((host, port))
+    print("MyDesk STUN 监听 %s:%d   (Ctrl+C 退出)" % (host, port))
+    while True:
+        data, addr = sock.recvfrom(2048)
+        out = reply(data, addr)
+        if out:
+            sock.sendto(out, addr)
+
+if __name__ == "__main__":
+    main()
+`;
+
+const ET_STEPS = `# 1) 两台机器各装 EasyTier（需要管理员/root，会创建虚拟网卡）
+#    下载: https://github.com/EasyTier/EasyTier/releases
+
+# 2) 两端用同一组网络名 + 密码组网
+#    共享节点地址见 easytier.cn 文档（没有公网 IP 时用官方共享节点）
+sudo easytier-core -d \\
+  --network-name mydesk \\
+  --network-secret 换成你的密码 \\
+  -p tcp://<共享节点>:11010
+
+# 3) 查看本机虚拟 IP（通常是 10.144.x.x）
+easytier-cli node
+
+# 4) 在其中一台跑 STUN（默认 0.0.0.0:3478）
+python3 stun.py
+
+# 5) 两端「高级：自定义 STUN / TURN」都填虚拟网里的 STUN
+stun:10.144.1.1:3478
+
+# 6) 重新生成邀请码 / 回执码再连接`;
+
+
+/* ============================================================
+   11. 启动
+   ============================================================ */
+function boot() {
+  byId("modeSeg").querySelectorAll("button[data-mode]").forEach((b) => {
+    if (b.dataset.mode === "server" && !CAN_SERVER) {
+      b.disabled = true;
+      b.title = "需要通过 http(s) 访问才能使用信令服务器";
+    }
+  });
+  byId("bridgeScript").textContent = BRIDGE_SCRIPT;
+  byId("stunScript").textContent = STUN_SCRIPT;
+  byId("etSteps").textContent = ET_STEPS;
+  loadIceConfig();
+  bindUI();
+  render();
+  setPill("未连接", "");
+  log("MyDesk 已就绪：单文件、零服务器、纯 P2P");
+
+  // 默认模式：由服务器托管时用「服务器」，本地文件用「手动」
+  setMode(CAN_SERVER ? "server" : "manual");
+  // 兼容老链接（?room=），新链接走 #room=
+  const hashRoom = /[#&]room=([A-Za-z0-9]+)/.exec(location.hash || "");
+  const roomParam = CAN_SERVER
+    ? (hashRoom ? hashRoom[1] : new URL(location.href).searchParams.get("room"))
+    : null;
+  if (roomParam) {
+    byId("joinCode").value = String(roomParam).toUpperCase().slice(0, 6);
+    setTimeout(() => joinRoom(), 400);
+  }
+  if (!window.isSecureContext) {
+    log("当前不是安全上下文，屏幕共享可能被浏览器拦截", "warn");
+  }
+  if (typeof CompressionStream === "undefined") {
+    log("浏览器不支持握手码压缩，将使用未压缩格式（码更长）", "warn");
+  }
+  window.MyDesk = { state: S, stats: () => (S.pc ? S.pc.getStats() : null) };
+  setInterval(() => {
+    updateStageOverlay();
+    if (S.phase === "live" && S.pc) {
+      byId("liveDc").textContent = (S.dcCtl && S.dcCtl.readyState === "open" && S.dcInput && S.dcInput.readyState === "open")
+        ? "双通道已就绪" : "连接中…";
+    }
+  }, 900);
+}
+
+document.addEventListener("DOMContentLoaded", boot);
+})();
+</script>
+<script src="tauri-shim.js"></script>
+</body>
+</html>
