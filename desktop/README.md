@@ -98,8 +98,23 @@ docker run --rm -v "$PWD:/src" -w /src --user "$(id -u):$(id -g)" \
 | 能力 | Windows | Linux |
 | --- | --- | --- |
 | 截屏 | GDI BitBlt/StretchBlt（热路径，~40 ms/帧 1440p） | `xcap`：Wayland 走 portal/wlroots，X11 走 xcb；无缩放快路径 |
-| 键鼠注入 | enigo → SendInput | enigo 默认 **X11 后端**（Wayland 原生窗口收不到） |
+| 键鼠注入 | enigo → SendInput | **uinput**（`/dev/uinput`，Wayland 原生可用，niri 也支持）；X11 会话回退 enigo |
 | 剪贴板 | 未实现 | 未实现 |
+
+Wayland 下为什么不用 enigo：它 0.6 默认只编 `x11rb` 后端，只能往 XWayland 里注入，
+而 niri 这类合成器**不实现** `zwlr_virtual_pointer_v1`，portal 的 RemoteDesktop 后端在
+niri 上也不可用。uinput 在内核层造一个真实虚拟设备，合成器一视同仁。
+
+需要 `/dev/uinput` 写权限，一次性配置：
+
+```bash
+echo 'KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"' \
+  | sudo tee /etc/udev/rules.d/80-uinput.rules
+sudo udevadm control --reload && sudo udevadm trigger
+sudo usermod -aG input "$USER"    # 重新登录
+```
+
+启动日志会打印实际后端（`注入后端: uinput（Wayland 原生）`），`input_status` 命令里也能看到。
 
 ## CI
 

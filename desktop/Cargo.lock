@@ -2434,6 +2434,7 @@ dependencies = [
  "enigo",
  "image",
  "jpeg-encoder",
+ "libc",
  "mydesk-core",
  "serde",
  "serde_json",

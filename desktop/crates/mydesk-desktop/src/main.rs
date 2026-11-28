@@ -17,6 +17,8 @@
 mod capture_win;
 mod commands;
 mod inject;
+#[cfg(target_os = "linux")]
+mod inject_uinput;
 mod config;
 
 
