@@ -44,17 +44,75 @@ desktop/
 
 ## 构建 / 运行
 
-需要 **MSVC 工具链 + WebView2 运行时**（Win10/11 自带），Rust 1.78+。
+Rust 1.78+。两个平台都只依赖 `cargo`，前端不需要 Node 工具链（`build.rs` 会把仓库根的
+`MyDesk.html` 拷成 `ui/index.html`）。
+
+### Windows
+
+需要 **MSVC 工具链 + WebView2 运行时**（Win10/11 自带）。
 
 ```powershell
 cd desktop
-cargo build --release        # target/release/mydesk.exe
-cargo test -p mydesk-core    # 纯逻辑单测
-.	argeteleasemydesk.exe
+cargo build --release           # target/release/mydesk.exe
+cargo test -p mydesk-core       # 纯逻辑单测
+.\target\release\mydesk.exe
 ```
 
 > 如果在没有开发者命令提示符的环境里构建失败 `link.exe not found`，先 `call vcvars64.bat`；
 > 若还报错，把 `TMP`/`TEMP` 指向可写目录（受限环境下 cl.exe 写不了系统临时目录）。
+
+### Linux
+
+```bash
+# Arch
+sudo pacman -S --needed base-devel webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg
+# Ubuntu 22.04+
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+     librsvg2-dev libxdo-dev libxkbcommon-dev build-essential
+
+cd desktop
+cargo test -p mydesk-core
+cargo build --release           # target/release/mydesk
+```
+
+打包（deb / AppImage）：
+
+```bash
+cargo install tauri-cli --version "^2" --locked
+cd desktop/crates/mydesk-desktop
+cargo tauri build --bundles deb,appimage
+# desktop/target/release/bundle/{deb,appimage}/
+```
+
+也可以直接用固定构建镜像，环境不污染主机：
+
+```bash
+docker build -f docker/linux-build.Dockerfile -t mydesk-linux-build .
+docker run --rm -v "$PWD:/src" -w /src --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp mydesk-linux-build \
+  bash -lc 'cd desktop/crates/mydesk-desktop && cargo tauri build --bundles deb,appimage --ci'
+```
+
+### Linux 上的能力差异
+
+| 能力 | Windows | Linux |
+| --- | --- | --- |
+| 截屏 | GDI BitBlt/StretchBlt（热路径，~40 ms/帧 1440p） | `xcap`：Wayland 走 portal/wlroots，X11 走 xcb；无缩放快路径 |
+| 键鼠注入 | enigo → SendInput | enigo 默认 **X11 后端**（Wayland 原生窗口收不到） |
+| 剪贴板 | 未实现 | 未实现 |
+
+## CI
+
+`.github/workflows/desktop.yml`：
+
+* `test` —— `cargo test -p mydesk-core` + `cargo check -p mydesk-desktop`；
+* `linux-bundles` —— 构建固定镜像后在容器里 `cargo tauri build --bundles deb,appimage`；
+* `windows-bundles` —— `cargo tauri build --bundles nsis,msi`；
+* `release` —— 推 `desktop-v*` tag 时把两平台安装包 + `SHA256SUMS.txt` 挂到 Release。
+
+本地已验证：Linux 上 `cargo test` 21/21、`cargo tauri build` 产出 `.deb`（4.5 MB）与 `.AppImage`（105 MB）。
+
+安全问题与修复记录见 [`SECURITY-AUDIT.md`](SECURITY-AUDIT.md)。
 
 ## 用起来
 

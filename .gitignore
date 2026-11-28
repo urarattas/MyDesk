@@ -11,3 +11,6 @@ __pycache__/
 .notes/
 desktop/crates/mydesk-desktop/gen/*
 desktop/crates/mydesk-desktop/ui/index.html
+desktop/target/
+desktop/.cargo-home/
+dist/
