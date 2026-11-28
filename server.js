@@ -240,6 +240,9 @@ class Conn {
     if (avail < 2) return null;
 
     const fin = (buf[start] & 0x80) !== 0;
+    const rsv = buf[start] & 0x70;
+    // 没有协商任何扩展（permessage-deflate 也没开），RSV1-3 置位就是协议错误
+    if (rsv) { this.close(1002); return null; }
     const opcode = buf[start] & 0x0f;
     const masked = (buf[start + 1] & 0x80) !== 0;
     let length = buf[start + 1] & 0x7f;
@@ -493,12 +496,15 @@ const server = http.createServer((req, res) => {
   }
 
   if (url.pathname === "/healthz") {
-    const body = Buffer.from(JSON.stringify({
-      ok: true,
-      rooms: rooms.size,
-      sockets: conns.size,
-      uptime: Math.round(process.uptime())
-    }));
+    const info = { ok: true };
+    // 房间数/连接数默认不暴露：公网部署时它们只是免费的侦察信息。
+    // 需要排障就设 HEALTHZ_DETAIL=1。
+    if (process.env.HEALTHZ_DETAIL === "1") {
+      info.rooms = rooms.size;
+      info.sockets = conns.size;
+      info.uptime = Math.round(process.uptime());
+    }
+    const body = Buffer.from(JSON.stringify(info));
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     res.end(req.method === "HEAD" ? undefined : body);
     return;

@@ -103,13 +103,14 @@ the tunnel answers but `/ws` fails, the proxy is not forwarding the upgrade.
 | `EXIT_ON_UNCAUGHT` | `0` | Set to `1` to shut down on an uncaught exception instead of logging and carrying on |
 | `TRUSTED_ORIGINS` | *(empty)* | Extra comma-separated origins to accept, e.g. `http://tauri.localhost`. The native desktop client runs inside WebView2, so its page origin is `tauri.localhost` — needed when `STRICT_ORIGIN=1` |
 | `MYDESK_HTML` | `/app/MyDesk.html` | Path of the page to serve. Re-read when its mtime changes, so a bind mount updates the app without a rebuild |
+| `HEALTHZ_DETAIL` | `0` | `1` adds `rooms` / `sockets` / `uptime` to `/healthz`. Off by default so a public deployment does not hand out free reconnaissance |
 
 ## HTTP surface
 
 | Path | Purpose |
 | --- | --- |
 | `GET /` | The app (`MyDesk.html`) |
-| `GET /healthz` | `{"ok":true,"rooms":N}` — used by the Docker healthcheck |
+| `GET /healthz` | `{"ok":true}` — used by the Docker healthcheck; `HEALTHZ_DETAIL=1` adds `rooms`/`sockets`/`uptime` |
 | `WS /ws` | Signaling socket |
 
 ## Releases

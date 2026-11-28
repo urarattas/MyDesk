@@ -18,6 +18,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("BRIDGE_PORT", "8765"))
@@ -650,6 +651,8 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(403, "host not allowed")
             return False
         if need_token and not _token_ok(self.headers):
+            # 失败一次拖慢 150ms：浏览器对同源并发本来就有上限，这样把猜测速率压到个位数/秒
+            time.sleep(0.15)
             self._deny(401, "token required")
             return False
         return True

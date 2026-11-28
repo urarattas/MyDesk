@@ -31,9 +31,9 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
 
@@ -43,9 +43,13 @@ jobs:
       - name: Signaling server smoke tests
         run: npm test
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
 
-      - uses: Swatinem/rust-cache@v2
+        with:
+
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: desktop
 
@@ -58,13 +62,13 @@ jobs:
     needs: test
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
 
@@ -97,7 +101,7 @@ jobs:
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bridge
           path: bridge/dist/MyDeskBridge.exe
@@ -108,11 +112,15 @@ jobs:
     needs: test
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
 
-      - uses: Swatinem/rust-cache@v2
+        with:
+
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: desktop
 
@@ -123,7 +131,7 @@ jobs:
         working-directory: desktop/crates/mydesk-desktop
         run: cargo tauri build --bundles nsis,msi --ci
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: desktop-windows
           path: |
@@ -136,12 +144,12 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build the pinned build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: docker/linux-build.Dockerfile
@@ -160,7 +168,7 @@ jobs:
             done'
 
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: desktop/.cargo-home
           key: cargo-registry-${{ hashFiles('desktop/Cargo.lock') }}
@@ -179,7 +187,7 @@ jobs:
             mydesk-linux-build:ci \
             bash -c 'export PATH=/usr/local/cargo/bin:$PATH; cd desktop/crates/mydesk-desktop && cargo tauri build --bundles deb,appimage --ci'
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: desktop-linux
           path: |
@@ -195,29 +203,29 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Lowercase the image name
         id: image
         run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ steps.image.outputs.name }}
           tags: |
             type=raw,value=latest
             type=sha,format=short
 
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
@@ -235,21 +243,21 @@ jobs:
     env:
       TAG: latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # 按名字逐个取。不要用「下载全部」：buildx 会额外产出
       # <repo>~<id>.dockerbuild 之类的 artifact，既没用、还会让这一步随机失败。
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: bridge
           path: artifacts/bridge
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: desktop-windows
           path: artifacts/windows
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: desktop-linux
           path: artifacts/linux
@@ -331,7 +339,7 @@ jobs:
             -f sha="${GITHUB_SHA}" -F force=true >/dev/null || \
             echo "::warning::could not move the $TAG tag; assets were still updated"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-assets
           path: dist/*

@@ -136,12 +136,12 @@ Linux 与 Windows 的差异仍然存在（不是 bug，但要知道）：
 | # | 级别 | 问题 | 说明 / 建议 |
 | --- | --- | --- | --- |
 | R-5 | 低 | 桥接 CORS 回显任意 `Origin`，并声明 `Access-Control-Allow-Private-Network: true` | 设计使然：页面可能部署在任意域名。真正的闸门是配对令牌；令牌 128 bit，无法暴力 |
-| R-6 | 低 | `/input`、`/clipboard` 的 401 没有限速 | 浏览器对同一 origin 的并发连接有限，实际能压的并发不高；可加 100–200ms 延迟进一步降低尝试速率 |
-| R-7 | 低 | 配对令牌存进 `localStorage` | 同源脚本可读；`file://` 下本地 HTML 之间可能共享。建议改 `sessionStorage`，或加「记住令牌」开关默认关闭 |
+| R-6 | 低 | `/input`、`/clipboard` 的 401 没有限速 | **已修复**：失败时延迟 150 ms（实测坏令牌 151 ms / 好令牌 0.7 ms），把猜测速率压到个位数/秒 |
+| R-7 | 低 | 配对令牌存进 `localStorage` | **已修复**：默认 `sessionStorage`，勾「记住配对令牌」才写 `localStorage`，取消勾选会清掉已存的值 |
 | R-8 | 低 | `join` 的报错区分「房间不存在」与「房间已满」 | 房间枚举 oracle；8 位房号 + 令牌桶后价值很低，可统一文案 |
-| R-9 | 低 | WebSocket 解析未校验 RSV1–3 位 | RFC 6455 要求置位时回 1002；只影响协议严格性 |
-| R-10 | 中（供应链） | 第三方 Action 用 tag（`@v4`、`@v2`）而非 commit SHA 固定 | tag 可被上游移动。建议固定到 SHA，或用 Dependabot 管理 |
-| R-11 | 信息 | `/healthz` 暴露房间数与连接数 | 便于运维，公网部署时可考虑移除 |
+| R-9 | 低 | WebSocket 解析未校验 RSV1–3 位 | **已修复**：置位直接 close(1002)，`test/protocol.mjs` 覆盖 |
+| R-10 | 中（供应链） | 第三方 Action 用 tag（`@v4`、`@v2`）而非 commit SHA 固定 | **已修复**：12 个 Action 全部固定到 commit SHA；`dtolnay/rust-toolchain` 固定后补了 `toolchain: stable`（它靠 ref 名推断工具链） |
+| R-11 | 信息 | `/healthz` 暴露房间数与连接数 | **已修复**：默认只回 `{"ok":true}`，`HEALTHZ_DETAIL=1` 才带计数 |
 | R-12 | 信息 | exe / deb / AppImage 均未签名 | README 已要求对照 `SHA256SUMS.txt` 校验 |
 
 ## 复核为良好的部分

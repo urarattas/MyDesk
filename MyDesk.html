@@ -639,6 +639,10 @@ details .dbody>*:first-child{margin-top:12px}
         <div class="row" style="margin-top:8px">
           <input type="text" id="bridgeToken" spellcheck="false" autocomplete="off" placeholder="配对令牌">
         </div>
+        <label class="sw mini" style="margin-top:6px">
+          <input type="checkbox" id="rememberBridgeToken"><i></i>
+          <span>记住配对令牌（写入 localStorage；不勾只保留到关闭页面）</span>
+        </label>
         <p class="hint" style="margin-top:6px">
           桥接<b>要求配对令牌</b>：bridge.py / MyDeskBridge.exe 启动时会在控制台打印
           <code>配对令牌: …</code>，粘贴到这里再点「检测」。没有令牌时任何网页都无法驱动它。
@@ -1148,7 +1152,11 @@ function loadIceConfig() {
       S.clipSync = clip === "1";
       byId("swClip").checked = S.clipSync;
     }
-    const bridgeToken = localStorage.getItem("mydesk.bridgetoken.v1");
+    // 令牌默认只存本次会话；勾了「记住」才落盘到 localStorage
+    const rememberToken = localStorage.getItem("mydesk.bridgetoken.remember.v1") === "1";
+    byId("rememberBridgeToken").checked = rememberToken;
+    const bridgeToken = (rememberToken ? localStorage.getItem("mydesk.bridgetoken.v1") : null)
+      || sessionStorage.getItem("mydesk.bridgetoken.v1");
     if (bridgeToken) {
       S.bridge.token = bridgeToken;
       byId("bridgeToken").value = bridgeToken;
@@ -2777,7 +2785,18 @@ async function bridgePing(opts) {
   const silent = !!(opts && opts.silent);
   const url = bridgeBase();
   S.bridge.token = byId("bridgeToken").value.trim();
-  try { localStorage.setItem("mydesk.bridgetoken.v1", S.bridge.token); } catch (err) {}
+  try {
+    const remember = byId("rememberBridgeToken").checked;
+    localStorage.setItem("mydesk.bridgetoken.remember.v1", remember ? "1" : "0");
+    if (remember) {
+      localStorage.setItem("mydesk.bridgetoken.v1", S.bridge.token);
+      sessionStorage.removeItem("mydesk.bridgetoken.v1");
+    } else {
+      sessionStorage.setItem("mydesk.bridgetoken.v1", S.bridge.token);
+      localStorage.removeItem("mydesk.bridgetoken.v1");
+    }
+  } catch (err) {}
+
   if (!silent) {
     byId("btnBridgeConnect").disabled = true;
     byId("btnBridgeConnect").textContent = "检测中…";
@@ -3096,6 +3115,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("BRIDGE_PORT", "8765"))
@@ -3728,6 +3748,8 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(403, "host not allowed")
             return False
         if need_token and not _token_ok(self.headers):
+            # 失败一次拖慢 150ms：浏览器对同源并发本来就有上限，这样把猜测速率压到个位数/秒
+            time.sleep(0.15)
             self._deny(401, "token required")
             return False
         return True
