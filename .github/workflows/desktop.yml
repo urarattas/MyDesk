@@ -65,7 +65,8 @@ jobs:
 
       - name: Show toolchain and library versions
         run: |
-          docker run --rm mydesk-linux-build:ci bash -lc '
+          docker run --rm mydesk-linux-build:ci bash -c '
+            export PATH=/usr/local/cargo/bin:$PATH;
             rustc --version; cargo --version; cargo tauri --version;
             for p in libpipewire-0.3 libspa-0.2 webkit2gtk-4.1 gtk+-3.0 gbm dbus-1; do
               printf "%-20s %s\n" "$p" "$(pkg-config --modversion "$p" 2>/dev/null || echo missing)";
@@ -81,13 +82,16 @@ jobs:
       - name: cargo tauri build (deb + AppImage) inside the image
         run: |
           mkdir -p desktop/.cargo-home
+          # 注意用 bash -c 而不是 -lc：login shell 会重新读 /etc/profile，
+          # 把镜像里 ENV PATH 的 /usr/local/cargo/bin 覆盖掉，cargo 就找不到了。
           docker run --rm \
             -v "$PWD:/src" -w /src \
             --user "$(id -u):$(id -g)" \
             -e HOME=/tmp \
             -e CARGO_HOME=/src/desktop/.cargo-home \
+            -e APPIMAGE_EXTRACT_AND_RUN=1 \
             mydesk-linux-build:ci \
-            bash -lc 'cd desktop/crates/mydesk-desktop && cargo tauri build --bundles deb,appimage --ci'
+            bash -c 'export PATH=/usr/local/cargo/bin:$PATH; cd desktop/crates/mydesk-desktop && cargo tauri build --bundles deb,appimage --ci'
 
       - name: Collect bundles
         run: |
