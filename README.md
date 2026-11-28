@@ -114,19 +114,32 @@ the tunnel answers but `/ws` fails, the proxy is not forwarding the upgrade.
 
 ## Releases
 
-Two rolling GitHub releases are published by CI, both fed from the default branch:
+One rolling release, tag **`latest`**, rebuilt by `.github/workflows/release.yml` on
+every push to `rust-desktop`. It is always the "Latest" release, so every link below
+is stable:
 
-| Tag | Contents | Updated by |
-| --- | --- | --- |
-| `html` | `MyDesk.html` + `.sha256` — the standalone app | `.github/workflows/html.yml` on every push that touches `MyDesk.html` |
-| `bridge-latest` | `MyDeskBridge.exe` + `.sha256` | `.github/workflows/bridge.yml` |
+```
+https://github.com/urarattas/MyDesk/releases/latest/download/<file>
+```
 
-`html` is deliberately **not** marked as the "latest" release, so
-`releases/latest/download/MyDeskBridge.exe` keeps resolving to the bridge build.
+| File | What it is |
+| --- | --- |
+| `MyDeskBridge.exe` | Windows input bridge (`+ .sha256`) |
+| `MyDesk-windows-x64-setup.exe` / `MyDesk-windows-x64.msi` | Desktop client, Windows |
+| `MyDesk-linux-amd64.deb` / `MyDesk-linux-amd64.AppImage` | Desktop client, Linux — **no WebRTC in this build, capture and injection only** |
+| `MyDesk.html` | Standalone single-file app (`+ .sha256`) |
+| `SHA256SUMS.txt` | Checksums for everything above |
 
-Download the standalone file from
-`https://github.com/urarattas/MyDesk/releases/download/html/MyDesk.html`, or straight
-from a running server at `/MyDesk.html`.
+The signaling server image is not a release asset; it goes to GHCR with a matching
+`latest` tag:
+
+```bash
+docker pull ghcr.io/urarattas/mydesk:latest
+```
+
+`MyDesk.html` is also served by a running instance at `/MyDesk.html`.
+
+`ci.yml` only runs tests (server + bridge + `mydesk-core`); it publishes nothing.
 
 ## Signaling protocol
 
@@ -228,9 +241,8 @@ from the **系统级操控** panel:
   binary is unsigned, so verify the `.sha256` published next to it
   (`certutil -hashfile MyDeskBridge.exe SHA256`) before running it.
 
-Releases come from CI: every push to `server` refreshes the rolling
-`bridge-latest` release, and a `bridge-v*` tag produces a versioned one. Both ship
-`MyDeskBridge.exe` plus its SHA-256, so
+Releases come from CI: every push to `rust-desktop` refreshes the single `latest`
+release, which ships `MyDeskBridge.exe` plus its SHA-256, so
 `https://github.com/urarattas/MyDesk/releases/latest/download/MyDeskBridge.exe`
 always resolves once the workflow has run.
 
@@ -263,7 +275,7 @@ not need an install step either.
 
 1. **test** — `npm test` on Node 22.
 2. **docker** — builds the image with Buildx, tags it with the branch, the short
-   SHA and semver tags, and pushes to `ghcr.io/<owner>/<repo>`
+   and `latest` + `sha-<short>` tags, pushed to `ghcr.io/<owner>/<repo>`
    (`GITHUB_TOKEN`, no extra secret needed).
 
 Images are published for pushes only; pull requests just build.

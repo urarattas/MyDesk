@@ -1,69 +1,50 @@
 name: ci
 
+# 快速反馈：只跑纯逻辑测试，不产出任何发布物。
+# 真正的构建与发布在 release.yml 里（推送 rust-desktop 时统一出一个 latest Release）。
+
 on:
   push:
-    branches: [server]
-    tags: ["v*"]
+    branches: [rust-desktop, server, main, single-file]
   pull_request:
-    branches: [server]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  test:
-    name: test
+  server:
+    name: server + bridge
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Check the embedded bridge script is not corrupt
-        run: npm run check:bridge
 
-      - name: Smoke test the signaling server
+      - name: The embedded bridge script matches bridge/bridge.py
+        run: node scripts/check-bridge.mjs
+
+      - name: Signaling server tests (smoke, proxy, hardening)
         run: npm test
 
-  docker:
-    name: docker image
-    needs: test
-    if: github.event_name == 'push'
+  rust:
+    name: rust core
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Lowercase the image name
-        id: image
-        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      # main / single-file / server 上没有 desktop/，跳过即可
+      - if: hashFiles('desktop/Cargo.toml') != ''
+        uses: dtolnay/rust-toolchain@stable
 
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
+      - if: hashFiles('desktop/Cargo.toml') != ''
+        uses: Swatinem/rust-cache@v2
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          workspaces: desktop
 
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ steps.image.outputs.name }}
-          tags: |
-            type=ref,event=branch
-            type=sha,format=short
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - if: hashFiles('desktop/Cargo.toml') != ''
+        name: Core unit tests
+        working-directory: desktop
+        run: cargo test -p mydesk-core --locked

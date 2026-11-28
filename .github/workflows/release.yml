@@ -1,0 +1,310 @@
+name: release
+
+# 一套流水线、一个 Release、一个入口：
+#   https://github.com/<owner>/<repo>/releases/latest/download/<文件名>
+#
+# 每次推送 rust-desktop 分支都会重建全部产物，并用固定文件名刷新 `latest`
+# Release（同时把 latest 这个 tag 移到当前提交）。docker 镜像另推 GHCR 的
+# `:latest`，拉取命令写进 Release 说明里。
+
+on:
+  push:
+    branches: [rust-desktop]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+# 同一时间只允许一次发布，避免两个提交互相覆盖资产
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: The embedded bridge script matches bridge/bridge.py
+        run: node scripts/check-bridge.mjs
+
+      - name: Signaling server smoke tests
+        run: npm test
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+
+      - name: Core unit tests
+        working-directory: desktop
+        run: cargo test -p mydesk-core --locked
+
+  bridge:
+    name: bridge (windows)
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: The embedded bridge script matches bridge/bridge.py
+        run: node scripts/check-bridge.mjs
+
+      - name: Build MyDeskBridge.exe
+        working-directory: bridge
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          pyinstaller --noconfirm --clean --onefile --name MyDeskBridge --distpath dist --workpath build bridge.py
+
+      - name: Smoke test the exe
+        working-directory: bridge
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\MyDeskBridge.exe -PassThru
+          try {
+            $ok = $false
+            foreach ($i in 1..30) {
+              Start-Sleep -Milliseconds 500
+              try {
+                $r = Invoke-RestMethod -Uri "http://127.0.0.1:8765/healthz" -TimeoutSec 2
+                if ($r.ok) { Write-Host "healthz: $($r | ConvertTo-Json -Compress)"; $ok = $true; break }
+              } catch { }
+            }
+            if (-not $ok) { throw "bridge did not answer on 127.0.0.1:8765" }
+          } finally {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridge
+          path: bridge/dist/MyDeskBridge.exe
+          if-no-files-found: error
+
+  desktop-windows:
+    name: desktop (windows)
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: cargo tauri build (nsis + msi)
+        working-directory: desktop/crates/mydesk-desktop
+        run: cargo tauri build --bundles nsis,msi --ci
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: |
+            desktop/target/release/bundle/nsis/*.exe
+            desktop/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+
+  desktop-linux:
+    name: desktop (linux)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the pinned build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/linux-build.Dockerfile
+          load: true
+          tags: mydesk-linux-build:ci
+          cache-from: type=gha,scope=linux-build
+          cache-to: type=gha,mode=max,scope=linux-build
+
+      - name: Show toolchain and library versions
+        run: |
+          docker run --rm mydesk-linux-build:ci bash -c '
+            export PATH=/usr/local/cargo/bin:$PATH;
+            rustc --version; cargo --version; cargo tauri --version;
+            for p in libpipewire-0.3 libspa-0.2 webkit2gtk-4.1 gtk+-3.0 gbm dbus-1; do
+              printf "%-20s %s\n" "$p" "$(pkg-config --modversion "$p" 2>/dev/null || echo missing)";
+            done'
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: desktop/.cargo-home
+          key: cargo-registry-${{ hashFiles('desktop/Cargo.lock') }}
+          restore-keys: cargo-registry-
+
+      - name: cargo tauri build (deb + AppImage) inside the image
+        run: |
+          mkdir -p desktop/.cargo-home
+          # bash -c 而不是 -lc：login shell 会重读 /etc/profile 把 PATH 覆盖掉
+          docker run --rm \
+            -v "$PWD:/src" -w /src \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e CARGO_HOME=/src/desktop/.cargo-home \
+            -e APPIMAGE_EXTRACT_AND_RUN=1 \
+            mydesk-linux-build:ci \
+            bash -c 'export PATH=/usr/local/cargo/bin:$PATH; cd desktop/crates/mydesk-desktop && cargo tauri build --bundles deb,appimage --ci'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          path: |
+            desktop/target/release/bundle/deb/*.deb
+            desktop/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+
+  docker:
+    name: server image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase the image name
+        id: image
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.image.outputs.name }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=server-image
+          cache-to: type=gha,mode=max,scope=server-image
+
+  publish:
+    name: publish
+    needs: [bridge, desktop-windows, desktop-linux, docker]
+    runs-on: ubuntu-latest
+    env:
+      TAG: latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Lowercase the image name
+        id: image
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble assets with stable names
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp artifacts/MyDeskBridge.exe                    dist/
+          cp artifacts/*setup.exe                          dist/MyDesk-windows-x64-setup.exe
+          cp artifacts/*.msi                               dist/MyDesk-windows-x64.msi
+          cp artifacts/*.deb                               dist/MyDesk-linux-amd64.deb
+          cp artifacts/*.AppImage                          dist/MyDesk-linux-amd64.AppImage
+          cp MyDesk.html                                   dist/
+          for f in dist/*; do
+            test -s "$f" || { echo "missing or empty: $f"; exit 1; }
+          done
+          (cd dist && sha256sum MyDeskBridge.exe > MyDeskBridge.exe.sha256)
+          (cd dist && sha256sum MyDesk.html      > MyDesk.html.sha256)
+          (cd dist && sha256sum MyDeskBridge.exe MyDesk.html MyDesk-* > SHA256SUMS.txt)
+          ls -lh dist
+
+      - name: Publish the rolling release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NOTES=$(cat <<'EOF'
+          自动构建，来自 __SHORT__（__SHA__）。
+
+          ### 下载（固定链接，永远指向最新一次构建）
+          | 文件 | 说明 |
+          | --- | --- |
+          | `MyDeskBridge.exe` | Windows 键鼠桥接 |
+          | `MyDesk-windows-x64-setup.exe` / `.msi` | 桌面客户端（Windows） |
+          | `MyDesk-linux-amd64.deb` / `.AppImage` | 桌面客户端（Linux；当前版本无 WebRTC，仅截屏与注入可用） |
+          | `MyDesk.html` | 单文件网页版 |
+          | `SHA256SUMS.txt` | 全部产物的校验和 |
+
+          ### 服务端镜像
+          ```
+          docker pull __IMAGE__:latest
+          docker pull __IMAGE__:sha-__SHORT__
+          ```
+
+          产物均未签名，请对照 `SHA256SUMS.txt` 校验后再运行。
+          EOF
+          )
+
+          NOTES="${NOTES//__SHORT__/${GITHUB_SHA:0:7}}"
+          NOTES="${NOTES//__SHA__/${GITHUB_SHA}}"
+          NOTES="${NOTES//__IMAGE__/${{ steps.image.outputs.name }}}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists, updating"
+          else
+            gh release create "$TAG" --title "MyDesk latest" --notes "$NOTES" --latest
+          fi
+          gh release upload "$TAG" dist/* --clobber
+          gh release edit "$TAG" --title "MyDesk latest" --notes "$NOTES" --latest
+
+          # 让 latest 这个 tag 也指向当前提交（资产按名字下载，不依赖它，但看起来更整齐）
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+            -f sha="${GITHUB_SHA}" -F force=true >/dev/null || \
+            echo "::warning::could not move the $TAG tag; assets were still updated"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist/*
