@@ -29,6 +29,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libwayland-dev \
         libpipewire-0.3-dev \
         libspa-0.2-dev \
+        libgbm-dev \
+        libdrm-dev \
+        libdbus-1-dev \
+        libclang-dev \
         patchelf \
         rpm \
     && rm -rf /var/lib/apt/lists/*
