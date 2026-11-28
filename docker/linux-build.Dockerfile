@@ -26,6 +26,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         librsvg2-dev \
         libxdo-dev \
         libxkbcommon-dev \
+        libwayland-dev \
+        libpipewire-0.3-dev \
+        libspa-0.2-dev \
         patchelf \
         rpm \
     && rm -rf /var/lib/apt/lists/*
