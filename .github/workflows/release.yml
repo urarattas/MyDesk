@@ -231,10 +231,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 按名字逐个取。不要用「下载全部」：buildx 会额外产出
+      # <repo>~<id>.dockerbuild 之类的 artifact，既没用、还会让这一步随机失败。
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
-          merge-multiple: true
+          name: bridge
+          path: artifacts/bridge
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-windows
+          path: artifacts/windows
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-linux
+          path: artifacts/linux
 
       - name: Lowercase the image name
         id: image
@@ -245,12 +257,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp artifacts/MyDeskBridge.exe                    dist/
-          cp artifacts/*setup.exe                          dist/MyDesk-windows-x64-setup.exe
-          cp artifacts/*.msi                               dist/MyDesk-windows-x64.msi
-          cp artifacts/*.deb                               dist/MyDesk-linux-amd64.deb
-          cp artifacts/*.AppImage                          dist/MyDesk-linux-amd64.AppImage
-          cp MyDesk.html                                   dist/
+
+          # upload-artifact 会保留相对路径（nsis/、msi/ 这些子目录），所以按模式找
+          pick() {
+            local f
+            f=$(find "$1" -name "$2" -print -quit)
+            [ -n "$f" ] || { echo "no $2 under $1" >&2; exit 1; }
+            printf '%s' "$f"
+          }
+
+          cp "$(pick artifacts/bridge  'MyDeskBridge.exe')"  dist/MyDeskBridge.exe
+          cp "$(pick artifacts/windows '*setup.exe')"        dist/MyDesk-windows-x64-setup.exe
+          cp "$(pick artifacts/windows '*.msi')"             dist/MyDesk-windows-x64.msi
+          cp "$(pick artifacts/linux   '*.deb')"             dist/MyDesk-linux-amd64.deb
+          cp "$(pick artifacts/linux   '*.AppImage')"        dist/MyDesk-linux-amd64.AppImage
+          cp MyDesk.html                                     dist/
           for f in dist/*; do
             test -s "$f" || { echo "missing or empty: $f"; exit 1; }
           done
