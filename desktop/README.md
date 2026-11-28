@@ -116,6 +116,13 @@ sudo usermod -aG input "$USER"    # 重新登录
 
 启动日志会打印实际后端（`注入后端: uinput（Wayland 原生）`），`input_status` 命令里也能看到。
 
+## 安全策略
+
+* WebView 带最小 CSP（`tauri.conf.json` 的 `app.security.csp`）：禁 `object-src`/`base-uri`/
+  `frame-ancestors`，`connect-src` 只放开 `ws:`/`wss:` 与 Tauri IPC；内联脚本需要
+  `'unsafe-inline'`（单文件页面）。`node test/csp.mjs` 会用同一份策略回归。
+* 信令地址是明文 `ws://` 且不是 loopback 时，页面与适配层都会给出警告（不阻断，内网明文部署可用）。
+
 ## CI
 
 `.github/workflows/desktop.yml`：

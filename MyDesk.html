@@ -1570,6 +1570,18 @@ function wsUrl() {
   return (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/ws";
 }
 
+let plaintextWarned = false;
+
+/** 明文信令会让中间人看到房间号、双方 IP 和 SDP；loopback 例外 */
+function warnIfPlaintextSignal(url) {
+  if (plaintextWarned || !url.startsWith("ws://")) return;
+  const host = url.slice("ws://".length).split("/")[0].split(":")[0].toLowerCase();
+  if (host === "localhost" || host === "127.0.0.1" || host === "[::1]") return;
+  plaintextWarned = true;
+  log("信令走明文 ws://（" + host + "）：同网段的中间人可以看到房间号、IP 与 SDP，建议改用 wss://", "warn");
+  toast("信令未加密（ws://），跨网使用时建议配 HTTPS 反代", "err", 5200);
+}
+
 function srvOpen() {
   return new Promise((resolve, reject) => {
     if (SRV.ws && SRV.ws.readyState === WebSocket.OPEN) { resolve(SRV.ws); return; }
@@ -1594,6 +1606,7 @@ function srvOpen() {
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
       onSignal(msg);
     };
+    warnIfPlaintextSignal(wsUrl());
   });
 }
 

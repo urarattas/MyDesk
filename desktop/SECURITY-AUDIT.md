@@ -6,7 +6,8 @@
 
 ## 结论
 
-共 10 项，其中 1 项高危（**已修复并有回归测试**），2 项中危（**已修复**），3 项低危与 4 项提示级问题仍建议处理。
+共 10 项，其中 1 项高危（**已修复并有回归测试**），3 项中危（**已修复**），
+1 项低危已加告警，其余 2 项低危与 4 项提示级问题仍建议处理。
 整体设计是「默认拒绝」的：注入默认关闭、没有本地 HTTP 端口、坐标与按键统一 `sanitize()`、握手码有大小上限。
 主要风险集中在**页面与桌面端共用的那段信令代码**——它承担了「授权」职责，却缺少角色约束。
 
@@ -39,22 +40,26 @@
 * 问题：探针会临时把 `allow_remote = true` 再移动光标，等于给页面一个「随时绕过授权开关」的入口。
 * 修复：同样只在自检/自动化环境可用。
 
-## 中危（未修复，建议）
+## 中危（已修复）
 
-### M-3 没有 CSP，且暴露 `withGlobalTauri`
+### M-3 没有 CSP
 
-* 位置：`tauri.conf.json`（`"csp": null`、`"withGlobalTauri": true`）。
+* 位置：`tauri.conf.json`（原来是 `"csp": null`）。
 * 风险：页面是单文件内联脚本，CSP 必然要放 `'unsafe-inline'`，但 `connect-src` / `object-src` /
-  `base-uri` / `frame-ancestors` 仍然能挡住一部分注入与数据外带；当前完全没有。
-* 建议：加最小 CSP，并把 `withGlobalTauri` 关掉改用 `@tauri-apps/api` 导入。
-  注意：CSP 改动需要真机回归（截屏、WS、DataChannel 都要覆盖），本轮未动。
+  `base-uri` / `frame-ancestors` 仍然能挡住一部分注入与数据外带；原来完全没有。
+* 修复：加入最小策略（保留 `'unsafe-inline'`，放开 `ws:`/`wss:` 与 Tauri IPC 的
+  `ipc: http://ipc.localhost`，禁掉 `object-src`/`base-uri`/`form-action`/`frame-ancestors`）。
+* 回归：`node test/csp.mjs` —— 用 `tauri.conf.json` 里的**同一份**策略经代理加载页面，
+  验证启动、`connect-src` 放行 WebSocket、零违规。
+* 仍待办：`withGlobalTauri: true` 还在，页面能直接拿到 `window.__TAURI__`；后续可改成
+  按需 `import` 并关掉它。
 
 ## 低危 / 提示
 
 | # | 位置 | 问题 | 建议 |
 | --- | --- | --- | --- |
 | L-1 | `capture_win.rs` | `CreateCompatibleDC/Bitmap` 失败分支没有 `DeleteDC/DeleteObject`，错误路径漏 GDI 句柄 | 失败分支补释放；只在异常路径，影响有限 |
-| L-2 | `mydesk-core/src/signal.rs` | `ws_url()` 接受明文 `ws://`，不提示 | 对非 loopback 地址在 UI 上给出警告；或默认要求 `wss` |
+| L-2 | 页面 / `tauri-shim.js` | ~~明文 `ws://` 无提示~~ **已加告警**：非 loopback 的 `ws://` 会在日志与 toast 里提示房间号/IP/SDP 可被同网段中间人看到（不阻断连接） | — |
 | L-3 | `main.rs` | 无显示器时 tao 直接 panic（带 backtrace），不像正常错误 | 捕获 GTK 初始化失败并打印可读提示 |
 | I-1 | git 历史 | `c885b5c` 曾提交 `%SystemDrive%/ProgramData/Microsoft/Windows/Caches/*.db`，`2fbfa70` 删除但仍在历史里 | 用 `git filter-repo` 清理；这些是 DNS/浏览器缓存，可能含用户痕迹 |
 | I-2 | `commands.rs` | 非 Windows 截屏路径忽略 `max_width`（`dw/dh` 未使用），Linux 上按原分辨率 JPEG | 用 `image` 缩放或在 encode 前 resample |

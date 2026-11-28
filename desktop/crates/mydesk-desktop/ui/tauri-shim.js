@@ -85,6 +85,7 @@
       super(mapWsUrl(url), protocols);
     }
   }
+  let plaintextWarned = false;
   function mapWsUrl(raw) {
     const base = serverBase();
     if (!base) return raw;
@@ -94,6 +95,14 @@
       u.protocol = s.protocol === "https:" ? "wss:" : "ws:";
       u.host = s.host;
       u.pathname = "/ws";
+      // 明文信令会被同网段的中间人看到房间号、IP 与 SDP；本机地址除外
+      if (u.protocol === "ws:" && !plaintextWarned) {
+        const host = u.hostname.toLowerCase();
+        if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1") {
+          plaintextWarned = true;
+          console.warn("[mydesk] 信令走明文 ws://" + u.host + "，建议改用 https 反代");
+        }
+      }
       return u.toString();
     } catch (e) {
       return raw;
