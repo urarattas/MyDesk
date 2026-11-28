@@ -66,9 +66,15 @@ cargo test -p mydesk-core       # 纯逻辑单测
 ```bash
 # Arch
 sudo pacman -S --needed base-devel webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg
-# Ubuntu 22.04+
+# Debian trixie / Ubuntu 26.04+（PipeWire >= 1.2 的头文件是硬性要求，见下）
 sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-     librsvg2-dev libxdo-dev libxkbcommon-dev build-essential
+     librsvg2-dev libxdo-dev libxkbcommon-dev libpipewire-0.3-dev libspa-0.2-dev \
+     libgbm-dev libdrm-dev libdbus-1-dev libclang-dev clang build-essential
+
+> **为什么不能用 Ubuntu 22.04 / 24.04**：`xcap` 依赖 pipewire-rs，而 `libspa-sys`
+> 的构建脚本会用 bindgen 直接读系统 PipeWire 头文件。22.04 是 0.3.48（缺
+> `spa_meta_first`、`spa_meta_region_is_valid`、`spa_video_info_raw.flags`），24.04 是 1.0.x，
+> 都编不过；Debian trixie / Ubuntu 26.04 的 1.4.x 才可以。
 
 cd desktop
 cargo test -p mydesk-core
