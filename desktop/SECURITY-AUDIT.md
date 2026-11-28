@@ -115,3 +115,38 @@ Linux 与 Windows 的差异仍然存在（不是 bug，但要知道）：
 * 截屏走 `xcap`（Wayland 走 portal / wlroots，X11 走 xcb），热路径没有 GDI 那样的零拷贝；
 * 注入走 enigo 的 X11 后端，Wayland 原生窗口收不到；
 * 剪贴板未实现（页面会收到明确的 `clip-fail`）。
+
+---
+
+# 第二轮：全仓复审（2026-11-28）
+
+范围扩大到服务端、桥接、页面与 CI。桌面端 Rust 部分沿用第一轮的结论。
+
+## 已修复
+
+| # | 级别 | 问题 | 处理 |
+| --- | --- | --- | --- |
+| R-1 | 中 | **链接自动加入房间**：`#room=CODE` 在页面加载 400ms 后自己 `join`。发链接的人当主机时可以直接推 SDP，把访问者单方面拉进会话（IP/SDP 泄露，随后可能被诱导共享屏幕） | 改为只预填房间号 + 提示，必须点「加入」；`test/link-join.mjs` 5/5 覆盖 |
+| R-2 | 低（功能） | `slice(0, 6)` 没跟着 8 位房号一起改，从链接进入时房号被截断，必然加入失败 | 改为按 8 位截取并过滤非法字符 |
+| R-3 | 中（供应链） | `release.yml` 里**所有 job** 都持有 `contents: write` + `packages: write`；其中 bridge job 会 `pip install` 第三方包，一旦上游被投毒就能写仓库 | 降为默认 `contents: read`，只有 `docker`（packages）与 `publish`（contents）单独授权 |
+| R-4 | 中（供应链） | `pyinstaller` 在 CI 里未固定版本，构建产物随上游漂移 | 固定 `pyinstaller==6.22.3` 到 `bridge/requirements.txt` |
+
+## 未修（列为建议或接受）
+
+| # | 级别 | 问题 | 说明 / 建议 |
+| --- | --- | --- | --- |
+| R-5 | 低 | 桥接 CORS 回显任意 `Origin`，并声明 `Access-Control-Allow-Private-Network: true` | 设计使然：页面可能部署在任意域名。真正的闸门是配对令牌；令牌 128 bit，无法暴力 |
+| R-6 | 低 | `/input`、`/clipboard` 的 401 没有限速 | 浏览器对同一 origin 的并发连接有限，实际能压的并发不高；可加 100–200ms 延迟进一步降低尝试速率 |
+| R-7 | 低 | 配对令牌存进 `localStorage` | 同源脚本可读；`file://` 下本地 HTML 之间可能共享。建议改 `sessionStorage`，或加「记住令牌」开关默认关闭 |
+| R-8 | 低 | `join` 的报错区分「房间不存在」与「房间已满」 | 房间枚举 oracle；8 位房号 + 令牌桶后价值很低，可统一文案 |
+| R-9 | 低 | WebSocket 解析未校验 RSV1–3 位 | RFC 6455 要求置位时回 1002；只影响协议严格性 |
+| R-10 | 中（供应链） | 第三方 Action 用 tag（`@v4`、`@v2`）而非 commit SHA 固定 | tag 可被上游移动。建议固定到 SHA，或用 Dependabot 管理 |
+| R-11 | 信息 | `/healthz` 暴露房间数与连接数 | 便于运维，公网部署时可考虑移除 |
+| R-12 | 信息 | exe / deb / AppImage 均未签名 | README 已要求对照 `SHA256SUMS.txt` 校验 |
+
+## 复核为良好的部分
+
+* **桥接**：校验 `Host` 挡 DNS rebinding；令牌用 `hmac.compare_digest`；`/clipboard` 读也需令牌；请求体上限 1 MB；只监听 `127.0.0.1`；无令牌时 `/healthz` 只回最小信息。
+* **服务端**：强制客户端掩码；单帧/单消息上限；续帧累计封顶；控制帧规则；`Sec-Fetch-Site` 拦跨站 WebSocket 劫持；join 令牌桶 + 单连接失败冷却；`MAX_ROOMS` / `MAX_CONNS`；畸形 request-target 退化为 400 而不是崩进程。
+* **页面**：没有 `innerHTML` / `eval` / `new Function`，日志与提示全部走 `textContent`；`offer`/`answer` 有角色校验；允许连接需要主机确认。
+* **桌面端**：uinput 设备结构体有 1116 字节的尺寸断言；`autotest_write` / `inject_probe` 仅在自动化模式下可用；注入默认关闭且关闭时 `release_all()`；WebView 有最小 CSP。

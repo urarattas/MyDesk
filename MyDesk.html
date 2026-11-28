@@ -3911,8 +3911,15 @@ function boot() {
     ? (hashRoom ? hashRoom[1] : new URL(location.href).searchParams.get("room"))
     : null;
   if (roomParam) {
-    byId("joinCode").value = String(roomParam).toUpperCase().slice(0, 6);
-    setTimeout(() => joinRoom(), 400);
+    // 只预填，不自动加入。链接是别人发来的：自动连接等于让发链接的人单方面
+    // 把本机拉进一个会话（他当主机时可以直接推 SDP，本机连确认的机会都没有）。
+    const code = String(roomParam).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+    if (code) {
+      byId("joinCode").value = code;
+      log("已从链接填入房间号 " + code + "，点「加入」才会连接", "warn");
+      toast("链接里的房间号已填入，确认后点「加入」", "", 4200);
+      byId("btnJoinRoom").focus();
+    }
   }
   if (!window.isSecureContext) {
     log("当前不是安全上下文，屏幕共享可能被浏览器拦截", "warn");
