@@ -19,7 +19,6 @@ mod commands;
 mod inject;
 mod config;
 
-use tauri::Manager;
 
 /// WebView2 的数据目录。
 ///

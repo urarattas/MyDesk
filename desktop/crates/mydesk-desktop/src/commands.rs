@@ -3,7 +3,6 @@
 //! 网页版对应的是「HTTP 打到 127.0.0.1:8765」，这里换成了进程内调用 ——
 //! 少一次 HTTP 往返、少一次 JSON 反序列化、没有 CORS、也没有能被任意网页打到的端口。
 
-use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -65,9 +64,15 @@ pub fn autotest_env() -> Option<AutotestEnv> {
     })
 }
 
-/// 自动化测试用的写文件通道（比在控制台抓输出可靠）
+/// 自动化测试用的写文件通道（比在控制台抓输出可靠）。
+///
+/// 只在自动化/自检环境开放：否则 WebView 里任意脚本都能借此写任意路径，
+/// 等于给页面一个「以当前用户身份落盘」的原语。
 #[tauri::command]
 pub fn autotest_write(path: String, content: String) -> Result<(), String> {
+    if std::env::var("MYDESK_AUTOTEST").is_err() && std::env::var("MYDESK_SELFTEST").is_err() {
+        return Err("autotest_write 仅在自动化测试模式下可用".into());
+    }
     if let Some(dir) = std::path::Path::new(&path).parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -328,6 +333,7 @@ fn capture_loop(cap: Capturer, slot: Arc<Mutex<Option<FrameSlot>>>, stop: Arc<At
         let t0 = std::time::Instant::now();
 
         // 目标尺寸：超过 max_width 就直接交给 StretchBlt 缩放（比 CPU 重采样快得多）
+        #[allow(unused_variables)]
         let (dw, dh) = if mw as u32 > cap.max_width {
             let ratio = cap.max_width as f64 / mw as f64;
             (cap.max_width as i32, ((mh as f64 * ratio) as i32).max(2))
@@ -464,8 +470,13 @@ pub struct InjectProbe {
     pub ok: bool,
 }
 
+/// 只在自检/自动化里可用：它会临时给自己授权再移动光标，
+/// 不该成为页面随时可调的「绕过 allow_remote」入口。
 #[tauri::command]
-pub fn inject_probe() -> InjectProbe {
+pub fn inject_probe() -> Result<InjectProbe, String> {
+    if std::env::var("MYDESK_SELFTEST").is_err() && std::env::var("MYDESK_AUTOTEST").is_err() {
+        return Err("inject_probe 仅在自检模式下可用".into());
+    }
     let mut guard = match inject::global().lock() {
         Ok(g) => g,
         Err(p) => p.into_inner(),
@@ -478,5 +489,5 @@ pub fn inject_probe() -> InjectProbe {
     let after = guard.cursor();
     guard.allow_remote = was;
     let screen = guard.status().screen;
-    InjectProbe { before, after, screen, ok: before != after }
+    Ok(InjectProbe { before, after, screen, ok: before != after })
 }
