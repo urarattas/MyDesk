@@ -1564,7 +1564,7 @@ function failSig(e) {
    3.1 服务器模式信令（需要 http/https，页面由信令服务器托管时可用）
    ============================================================ */
 const CAN_SERVER = location.protocol === "http:" || location.protocol === "https:";
-const SRV = { ws: null, code: "", pendingIce: [] };
+const SRV = { ws: null, code: "", pendingIce: [], role: "" };
 
 function wsUrl() {
   return (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/ws";
@@ -1626,14 +1626,25 @@ function onSignal(msg) {
 
     case "peer":
       // 不再自动开始协商：房间号只是 6 位码，自动接受等于「猜到码就能看到屏幕」。
+      if (SRV.role !== "host" || S.peerAsking) break;
       askPeerApprove();
       break;
 
     case "offer":
+      // 只有「加入方」会收到 offer。主机收到就说明有人绕过「允许连接」直接推 SDP。
+      if (SRV.role !== "guest") {
+        log("忽略了未授权的 offer（对端跳过了允许连接）", "warn");
+        break;
+      }
       guestAnswerViaServer(msg.sdp);
       break;
 
     case "answer":
+      // answer 只该来自刚被允许的加入方；主机还没开始协商就收到，直接丢弃
+      if (SRV.role !== "host" || !S.pc) {
+        log("忽略了意外的 answer", "warn");
+        break;
+      }
       hostAcceptViaServer(msg.sdp);
       break;
 
@@ -1761,6 +1772,7 @@ function flushRemoteIce() {
 }
 
 async function createRoom() {
+  SRV.role = "host";
   const btn = byId("btnCreateRoom");
   btn.disabled = true;
   try {
@@ -1785,6 +1797,7 @@ async function joinRoom() {
   try {
     setPill("加入房间…", "busy");
     await srvOpen();
+    SRV.role = "guest";
     srvSend({ type: "join", code });
   } catch (e) {
     toast(e.message, "err");
@@ -1797,6 +1810,7 @@ function resetServer() {
   clearPeerAsk();
   SRV.pendingIce = [];
   SRV.code = "";
+  SRV.role = "";
   if (SRV.ws) {
     try { SRV.ws.close(); } catch (e) { /* ignore */ }
     SRV.ws = null;
