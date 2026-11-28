@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"MyDesk 主窗口：调用本地命令（注入键鼠、截屏、配置）","local":true,"windows":["main"],"permissions":["core:default"]}}

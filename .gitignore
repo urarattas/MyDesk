@@ -9,3 +9,5 @@ bridge/build/
 __pycache__/
 *.spec
 .notes/
+desktop/crates/mydesk-desktop/gen/*
+desktop/crates/mydesk-desktop/ui/index.html
