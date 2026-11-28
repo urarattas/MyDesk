@@ -51,6 +51,7 @@ const JOIN_WINDOW_MS = 60 * 1000;
 const JOIN_COOLDOWN_MS = 5 * 60 * 1000;
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
+const ROOM_LEN = 8;                                        // 32^8 ≈ 1.1e12
 
 let appHtml = null;
 let appMtime = 0;
@@ -87,7 +88,7 @@ const conns = new Set();
 function newRoomCode() {
   for (;;) {
     let code = "";
-    for (let i = 0; i < 6; i += 1) {
+    for (let i = 0; i < ROOM_LEN; i += 1) {
       code += ROOM_ALPHABET[crypto.randomInt(ROOM_ALPHABET.length)];
     }
     if (!rooms.has(code)) return code;
@@ -95,7 +96,7 @@ function newRoomCode() {
 }
 
 /**
- * 全机 join 令牌桶。房间码只有 32^6 ≈ 1.07e9 种，如果允许无限次尝试，
+ * 全机 join 令牌桶。房间码有 32^8 ≈ 1.1e12 种，如果没有限制，
  * 攻击者开几十条连接就能在十几分钟内撞进某个正在等待的房间；
  * 这里把整个进程的猜测速率压到 JOIN_RATE/s（默认 40，可配）。
  */
@@ -396,7 +397,7 @@ function handleMessage(conn, msg) {
         return conn.send({ type: "error", message: "尝试过于频繁，请稍后再试" });
       }
       const code = String(msg.code || "").trim().toUpperCase();
-      if (code.length !== 6) return conn.send({ type: "error", message: "房间号格式不正确" });
+      if (code.length !== ROOM_LEN) return conn.send({ type: "error", message: "房间号格式不正确" });
       const room = rooms.get(code);
       if (!room) return conn.send({ type: "error", message: "房间不存在或已过期" });
       if (room.guest) return conn.send({ type: "error", message: "房间已满" });

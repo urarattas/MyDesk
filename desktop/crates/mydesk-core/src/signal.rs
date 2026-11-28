@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// 房间码字母表，与服务端保持一致（去掉容易看错的 0/O/1/I）
 pub const ROOM_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-pub const ROOM_LEN: usize = 6;
+pub const ROOM_LEN: usize = 8;
 
 /// 客户端 -> 服务端
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -121,7 +121,7 @@ pub enum SignalError {
     EmptyServer,
     #[error("服务器地址无法识别: {0}")]
     BadServer(String),
-    #[error("房间号应为 6 位（字母 A-Z / 数字 2-9，不含 0 O 1 I）")]
+    #[error("房间号应为 8 位（字母 A-Z / 数字 2-9，不含 0 O 1 I）")]
     BadRoomCode,
 }
 
@@ -174,12 +174,13 @@ mod tests {
 
     #[test]
     fn room_codes_are_validated_and_normalized() {
-        assert!(valid_room_code("ABCXYZ"));
-        assert!(!valid_room_code("abc123"), "小写不是服务端格式");
-        assert!(!valid_room_code("ABC12"));
-        assert!(!valid_room_code("ABC10O"), "0/O/1/I 不在字母表里");
-        assert_eq!(normalize_room_code(" abc-234 ").as_deref(), Some("ABC234"));
-        assert_eq!(normalize_room_code("ab c 2 3 4").as_deref(), Some("ABC234"));
+        assert!(valid_room_code("ABCD2345"));
+        assert!(!valid_room_code("abcd2345"), "小写不是服务端格式");
+        assert!(!valid_room_code("ABCD234"), "少一位不行");
+        assert!(!valid_room_code("ABCD23456"), "多一位也不行");
+        assert!(!valid_room_code("ABCD23O5"), "0/O/1/I 不在字母表里");
+        assert_eq!(normalize_room_code(" abcd-2345 ").as_deref(), Some("ABCD2345"));
+        assert_eq!(normalize_room_code("ab cd 2 3 4 5").as_deref(), Some("ABCD2345"));
         assert!(normalize_room_code("hello!").is_none());
     }
 
@@ -197,8 +198,8 @@ mod tests {
     #[test]
     fn room_link_uses_fragment() {
         assert_eq!(
-            room_link("https://desk.example.com/", "ABCXYZ").unwrap(),
-            "https://desk.example.com/#room=ABCXYZ"
+            room_link("https://desk.example.com/", "ABCD2345").unwrap(),
+            "https://desk.example.com/#room=ABCD2345"
         );
         assert!(room_link("https://desk.example.com", "nope").is_err());
     }

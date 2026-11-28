@@ -14,7 +14,7 @@ encrypted with DTLS-SRTP.
 
 | Mode | When | How |
 | --- | --- | --- |
-| **Server** | The page is served over `http(s)` | Create a room → share the 6-character code or the link → the host approves the joiner before anything is sent. |
+| **Server** | The page is served over `http(s)` | Create a room → share the 8-character code or the link → the host approves the joiner before anything is sent. |
 | **Manual** | `file://` or no server | Exchange one handshake string both ways. Works with zero infrastructure. |
 
 Both modes use exactly the same media/control stack; the mode selector in the UI
@@ -98,7 +98,7 @@ the tunnel answers but `/ws` fails, the proxy is not forwarding the upgrade.
 | `STRICT_ORIGIN` | `0` | Set to `1` to reject an `Origin`/`Host` mismatch instead of logging it |
 | `MAX_CONNS` | `512` | Concurrent WebSocket connections before new upgrades get `503` (`0` = unlimited) |
 | `MAX_ROOMS` | `256` | Rooms that may exist at once; beyond it `create` answers an error (`0` = unlimited) |
-| `JOIN_RATE` | `40` | Machine-wide ceiling on `join` attempts per second. This is what keeps the 6-character code space from being enumerable (`0` = unlimited) |
+| `JOIN_RATE` | `40` | Machine-wide ceiling on `join` attempts per second. This is what keeps the 8-character code space from being enumerable (`0` = unlimited) |
 | `JOIN_FAIL_BURST` | `12` | Failed `join` attempts allowed per connection per minute before it is put in a 5-minute cooldown |
 | `EXIT_ON_UNCAUGHT` | `0` | Set to `1` to shut down on an uncaught exception instead of logging and carrying on |
 | `TRUSTED_ORIGINS` | *(empty)* | Extra comma-separated origins to accept, e.g. `http://tauri.localhost`. The native desktop client runs inside WebView2, so its page origin is `tauri.localhost` — needed when `STRICT_ORIGIN=1` |
@@ -153,8 +153,8 @@ described above, so a rejected attempt is not a free retry.
 
 **What protects a session**
 
-- The room code plus a confirmation click on the host. A 6-character code from a
-  32-symbol alphabet is only `32^6 ≈ 1.07e9` possibilities, so it is treated as a
+- The room code plus a confirmation click on the host. An 8-character code from a
+  32-symbol alphabet is `32^8 ≈ 1.1e12` possibilities, so it is treated as a
   *hint*, not a secret: the host now has to approve the joiner before any offer is
   sent (`#peerAsk` in the page). Nothing is shared with a stranger who merely
   guesses the code.

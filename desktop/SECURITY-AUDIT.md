@@ -59,7 +59,7 @@
 | I-1 | git 历史 | `c885b5c` 曾提交 `%SystemDrive%/ProgramData/Microsoft/Windows/Caches/*.db`，`2fbfa70` 删除但仍在历史里 | 用 `git filter-repo` 清理；这些是 DNS/浏览器缓存，可能含用户痕迹 |
 | I-2 | `commands.rs` | 非 Windows 截屏路径忽略 `max_width`（`dw/dh` 未使用），Linux 上按原分辨率 JPEG | 用 `image` 缩放或在 encode 前 resample |
 | I-3 | Linux 注入 | enigo 0.6 默认只开 `x11rb`：Wayland 下按键/指针只能进 XWayland | 需要 Wayland 时启用 `libei_tokio` / `wayland` feature，并在运行时走 portal 授权 |
-| I-4 | 服务端 | 房间号 6 位 × 32 字母表 ≈ 30 bit，全局 40 次/秒 + 单连接失败冷却 | 公开部署建议把房间号加到 8 位，或给房间加一次性口令 |
+| I-4 | 服务端 | ~~房间号 6 位 ≈ 30 bit~~ **已处理**：房间号扩到 8 位（≈ 39.4 bit，`32^8 ≈ 1.1e12`），旧客户端不再兼容 | — |
 
 ## 做得对的地方（避免以后改坏）
 

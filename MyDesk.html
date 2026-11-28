@@ -449,13 +449,13 @@ details .dbody>*:first-child{margin-top:12px}
             </p>
             <button class="btn primary wide" id="btnCreateRoom" style="margin-top:10px">创建房间（我是被控端）</button>
             <div class="row" style="margin-top:8px">
-              <input type="text" id="joinCode" maxlength="6" placeholder="输入 6 位房间号"
+              <input type="text" id="joinCode" maxlength="8" placeholder="输入 8 位房间号"
                      autocomplete="off" spellcheck="false" style="text-transform:uppercase;letter-spacing:.14em">
               <button class="btn" id="btnJoinRoom">加入</button>
             </div>
           </div>
           <div id="srvRoom" class="hidden">
-            <div class="room-code" id="roomCode">------</div>
+            <div class="room-code" id="roomCode">--------</div>
             <p class="hint" id="srvStatus" style="text-align:center;margin-top:6px">等待对方加入…</p>
             <input type="text" id="roomLink" readonly style="margin-top:8px;font-family:var(--mono);font-size:11px">
             <div class="btn-row">
@@ -1625,7 +1625,7 @@ function onSignal(msg) {
       break;
 
     case "peer":
-      // 不再自动开始协商：房间号只是 6 位码，自动接受等于「猜到码就能看到屏幕」。
+      // 不再自动开始协商：房间号只是短码，自动接受等于「猜到码就能看到屏幕」。
       if (SRV.role !== "host" || S.peerAsking) break;
       askPeerApprove();
       break;
@@ -1669,7 +1669,7 @@ function onSignal(msg) {
 }
 
 /**
- * 有人加入房间：先让主机点一次「允许」再发 offer。房间号只有 32^6 种，
+ * 有人加入房间：先让主机点一次「允许」再发 offer。房间号只有 32^8 种，
  * 没有这一步的话，猜到/撞到码的人可以在主机完全无感的情况下拿到画面。
  */
 function askPeerApprove() {
@@ -1789,8 +1789,8 @@ async function createRoom() {
 async function joinRoom() {
   const input = byId("joinCode");
   const code = (input.value || "").trim().toUpperCase();
-  if (code.length !== 6) {
-    toast("请输入 6 位房间号");
+  if (code.length !== 8) {
+    toast("请输入 8 位房间号");
     input.focus();
     return;
   }

@@ -129,9 +129,9 @@ try {
   await sleep(900);
   await ev(`document.getElementById('btnCreateRoom').click()`);
   // 占位符是 6 个短横线，必须匹配字母表而不是长度
-  await waitFor(`/^[A-Z2-9]{6}$/.test(document.getElementById('roomCode').textContent.trim())`, 15000, "room code");
+  await waitFor(`/^[A-Z2-9]{8}$/.test(document.getElementById('roomCode').textContent.trim())`, 15000, "room code");
   const code = await ev(`document.getElementById('roomCode').textContent.trim()`);
-  check("host created a room", /^[A-Z2-9]{6}$/.test(code), code);
+  check("host created a room", /^[A-Z2-9]{8}$/.test(code), code);
 
   // 攻击者：加入房间后直接推 offer，跳过「允许连接」
   const attacker = new WebSocket(`ws://127.0.0.1:${APP_PORT}/ws`);

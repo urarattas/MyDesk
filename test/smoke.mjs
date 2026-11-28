@@ -122,7 +122,7 @@ try {
     host.send({ type: "create" });
     const msg = await host.next(4000, "room");
     assert.equal(msg.type, "room");
-    assert.match(msg.code, /^[A-Z2-9]{6}$/);
+    assert.match(msg.code, /^[A-Z2-9]{8}$/);
     host.code = msg.code;
   });
 
