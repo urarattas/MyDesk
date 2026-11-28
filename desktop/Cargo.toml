@@ -5,7 +5,7 @@ members = ["crates/mydesk-core", "crates/mydesk-desktop"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.78"
+rust-version = "1.90"   # Tauri 2.12 的 MSRV
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

@@ -44,9 +44,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         rpm \
     && rm -rf /var/lib/apt/lists/*
 
-# 固定 Rust 版本，和 rust-toolchain 保持一致
+# 固定 Rust 版本：Tauri 2.12 的 MSRV 是 1.90，低于它 cargo install tauri-cli 会直接拒绝
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-      | sh -s -- -y --profile minimal --default-toolchain 1.82.0 \
+      | sh -s -- -y --profile minimal --default-toolchain 1.90.0 \
     && rustc --version && cargo --version
 
 # Tauri CLI（打包 deb/AppImage 时需要）

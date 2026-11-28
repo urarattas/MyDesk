@@ -44,7 +44,7 @@ desktop/
 
 ## 构建 / 运行
 
-Rust 1.78+。两个平台都只依赖 `cargo`，前端不需要 Node 工具链（`build.rs` 会把仓库根的
+Rust 1.90+（Tauri 2.12 的 MSRV）。两个平台都只依赖 `cargo`，前端不需要 Node 工具链（`build.rs` 会把仓库根的
 `MyDesk.html` 拷成 `ui/index.html`）。
 
 ### Windows
