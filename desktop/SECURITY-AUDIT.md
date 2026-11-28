@@ -11,6 +11,28 @@
 整体设计是「默认拒绝」的：注入默认关闭、没有本地 HTTP 端口、坐标与按键统一 `sanitize()`、握手码有大小上限。
 主要风险集中在**页面与桌面端共用的那段信令代码**——它承担了「授权」职责，却缺少角色约束。
 
+## 阻断级：Linux WebView 没有 WebRTC（未解决）
+
+真机自检（niri, WebKitGTK 2.54.3, `MYDESK_SELFTEST=1`）结果：
+
+```
+href=tauri://localhost        secureContext=true
+RTCPeerConnection=undefined   ← 阻断
+getDisplayMedia=true  canvasCaptureStream=true  clipboard=true
+input_status={... "backend":"uinput"}      monitors=[{"name":"eDP-1",...}]
+```
+
+页面整套逻辑（信令、offer/answer、DataChannel、视频显示）都依赖 `RTCPeerConnection`，
+WebKitGTK 默认构建不含 WebRTC，所以在 Linux 上**桌面端目前无法建立会话**——
+CSP、注入、截屏、配置这些都正常，唯独最核心的 WebRTC 缺失。
+
+三条可选路径（需要产品决策，本轮未动）：
+
+1. **Linux 继续用网页版**（浏览器 + `bridge.py`，已验证可用），桌面端只在 Windows 发布；
+2. **换 webview**：CEF / 自带 Chromium —— Tauri 不支持，工作量巨大；
+3. **复活 `legacy/` 里的 webrtc-rs 实现**：Rust 原生 WebRTC，不依赖 webview，
+   但要先修那 9 处编译错误，并自己实现 SDP/ICE/Datachannel 与屏幕编码。
+
 ## 高危（已修复）
 
 ### H-1 绕过「允许连接」直接建立会话

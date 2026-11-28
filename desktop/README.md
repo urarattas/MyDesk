@@ -93,6 +93,15 @@ docker run --rm -v "$PWD:/src" -w /src --user "$(id -u):$(id -g)" \
   bash -lc 'cd desktop/crates/mydesk-desktop && cargo tauri build --bundles deb,appimage --ci'
 ```
 
+### ⚠️ Linux 目前无法建立会话
+
+WebKitGTK 默认构建不带 WebRTC，真机自检结果是 `RTCPeerConnection=undefined`
+（WebKitGTK 2.54.3 / niri）。页面整套连接逻辑都建立在它之上，所以 Linux 版
+**只能截屏、注入、读写配置，连不上对端**。Windows 的 WebView2 是完整 Chromium，没有这个问题。
+
+在 Windows 发布版可用之前，Linux 上请继续用网页版（浏览器 + `bridge.py`）。
+细节与备选方案见 [`SECURITY-AUDIT.md`](SECURITY-AUDIT.md)。
+
 ### Linux 上的能力差异
 
 | 能力 | Windows | Linux |
