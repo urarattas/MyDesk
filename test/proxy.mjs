@@ -47,7 +47,8 @@ const base = {
 
 const server = spawn(process.execPath, ["server.js"], {
   cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), HOST: "127.0.0.1" },
+  // 测试要读 rooms/sockets 计数，显式打开明细（生产默认不暴露）
+  env: { ...process.env, PORT: String(PORT), HOST: "127.0.0.1", HEALTHZ_DETAIL: "1" },
   stdio: ["ignore", "pipe", "pipe"]
 });
 let log = "";
